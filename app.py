@@ -121,6 +121,43 @@ def idw_grid(points_df, value_col="value", bbox=[68,6,97,36], grid_res=0.5, powe
     return grid, (min_lon, min_lat, max_lon, max_lat)
 
 def add_image_overlay_from_grid(m, grid, bbox, colormap, name, opacity=0.6):
+    """
+    Convert numeric grid into an RGBA image using colormap and overlay on folium map.
+    Fixed version: saves PNG to disk to avoid JSON serialization issue on Streamlit Cloud.
+    """
+    import matplotlib.pyplot as plt
+    from PIL import Image
+    import io, os, base64, tempfile
+
+    if grid is None:
+        return
+    g = np.nan_to_num(grid, nan=0.0)
+    vmin, vmax = np.nanmin(g), np.nanmax(g)
+    if vmax == vmin:
+        vmax = vmin + 1.0
+    norm = (g - vmin) / (vmax - vmin)
+    cmap = plt.get_cmap(colormap)
+    rgba = (cmap(norm) * 255).astype(np.uint8)
+    img = Image.fromarray(rgba)
+
+    # Save to a temporary file instead of BytesIO
+    tmp_dir = tempfile.gettempdir()
+    tmp_path = os.path.join(tmp_dir, f"{name.replace(' ','_')}.png")
+    img.save(tmp_path)
+
+    min_lon, min_lat, max_lon, max_lat = bbox
+    img_overlay = folium.raster_layers.ImageOverlay(
+        name=name,
+        image=tmp_path,
+        bounds=[[min_lat, min_lon], [max_lat, max_lon]],
+        opacity=opacity,
+        interactive=True,
+        cross_origin=False,
+        zindex=1,
+    )
+    img_overlay.add_to(m)
+    return (vmin, vmax)
+
     import matplotlib.pyplot as plt
     from PIL import Image
     if grid is None:
