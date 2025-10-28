@@ -625,11 +625,11 @@ if apply and user_line:
         with col2:
             avg_pm25 = df['pm25'].mean()
             pm_status = "Poor" if avg_pm25 > 100 else "Moderate" if avg_pm25 > 60 else "Good"
-            st.metric("Avg PM2.5", f"{avg_pm25:.1f} µg/m³", pm_status)
+            st.metric("Avg PM2.5", f"{avg_pm25:.1f} ug/m3", pm_status)
         
         with col3:
             avg_temp = df['temp'].mean()
-            st.metric("Avg Temperature", f"{avg_temp:.1f}°C")
+            st.metric("Avg Temperature", f"{avg_temp:.1f} C")
         
         with col4:
             cyclone_pct = (df['cyclone_risk'].sum() / len(df)) * 100
@@ -657,9 +657,91 @@ if apply and user_line:
         
         # Create feature groups for layers
         severity_layer = folium.FeatureGroup(name="Severity Markers", show=True)
-        heatmap_layer = folium.FeatureGroup(name="Heat Map", show=True)
+        pm25_heatmap = folium.FeatureGroup(name="PM2.5 Heat Map", show=("PM2.5" in params))
+        temp_heatmap = folium.FeatureGroup(name="Temperature Heat Map", show=("Temperature" in params))
+        wind_heatmap = folium.FeatureGroup(name="Wind Speed Heat Map", show=("Wind Speed" in params))
         
-        # Add severity markers
+        # Add heat maps for selected parameters with circular buffers
+        buf_deg = meters_to_deg(buffer_m)
+        
+        # PM2.5 heat map with colored circles
+        if "PM2.5" in params:
+            pm25_cmap = cm.linear.YlOrRd_09.scale(0, 200)
+            pm25_data = [[row['lat'], row['lon'], min(row['pm25']/10, 20)] 
+                         for _, row in df.iterrows() if row['pm25'] is not None]
+            if pm25_data:
+                HeatMap(pm25_data, radius=25, blur=35,
+                       gradient={0.0: 'green', 0.3: 'yellow', 0.5: 'orange', 0.7: 'red', 1.0: 'darkred'},
+                       min_opacity=0.4, max_zoom=13).add_to(pm25_heatmap)
+                
+                # Add colored buffer zones
+                for _, row in df.iterrows():
+                    if row['pm25'] is not None:
+                        color = pm25_cmap(row['pm25'])
+                        folium.Circle(
+                            location=[row['lat'], row['lon']],
+                            radius=buffer_m,
+                            color=color,
+                            fill=True,
+                            fillColor=color,
+                            fillOpacity=0.2,
+                            weight=1,
+                            popup=f"PM2.5: {row['pm25']:.1f}"
+                        ).add_to(pm25_heatmap)
+        
+        # Temperature heat map
+        if "Temperature" in params:
+            temp_cmap = cm.linear.RdYlBu_11.scale(0, 50)
+            temp_data = [[row['lat'], row['lon'], abs(row['temp'])/2] 
+                        for _, row in df.iterrows() if row['temp'] is not None]
+            if temp_data:
+                HeatMap(temp_data, radius=25, blur=35,
+                       gradient={0.0: 'blue', 0.3: 'cyan', 0.5: 'yellow', 0.7: 'orange', 1.0: 'red'},
+                       min_opacity=0.3, max_zoom=13).add_to(temp_heatmap)
+                
+                # Add colored buffer zones
+                for _, row in df.iterrows():
+                    if row['temp'] is not None:
+                        color = temp_cmap(row['temp'])
+                        folium.Circle(
+                            location=[row['lat'], row['lon']],
+                            radius=buffer_m,
+                            color=color,
+                            fill=True,
+                            fillColor=color,
+                            fillOpacity=0.2,
+                            weight=1,
+                            popup=f"Temp: {row['temp']:.1f}C"
+                        ).add_to(temp_heatmap)
+        
+        # Humidity heat map
+        if "Humidity" in params:
+            hum_cmap = cm.linear.Blues_09.scale(0, 100)
+            for _, row in df.iterrows():
+                if row['hum'] is not None:
+                    color = hum_cmap(row['hum'])
+                    folium.Circle(
+                        location=[row['lat'], row['lon']],
+                        radius=buffer_m,
+                        color=color,
+                        fill=True,
+                        fillColor=color,
+                        fillOpacity=0.25,
+                        weight=1,
+                        popup=f"Humidity: {row['hum']:.1f}%"
+                    ).add_to(temp_heatmap)
+        
+        # Wind speed heat map
+        if "Wind Speed" in params:
+            wind_cmap = cm.linear.PuBuGn_09.scale(0, 60)
+            wind_data = [[row['lat'], row['lon'], row['wind']/3] 
+                        for _, row in df.iterrows() if row['wind'] is not None]
+            if wind_data:
+                HeatMap(wind_data, radius=20, blur=30,
+                       gradient={0.0: 'lightblue', 0.5: 'blue', 1.0: 'darkblue'},
+                       min_opacity=0.3, max_zoom=13).add_to(wind_heatmap)
+        
+        # Add severity markers with detailed popups
         for _, row in df.iterrows():
             severity = row['severity_score']
             
@@ -677,16 +759,16 @@ if apply and user_line:
                 color, icon = 'green', 'ok'
                 risk = "LOW"
             
-            # Popup content
+            # Popup content (ASCII-safe)
             popup_html = f"""
             <div style='width:280px;font-family:Arial;'>
                 <h4 style='color:{color};margin:0;'>Point {row['point_id']} - {risk} RISK</h4>
                 <hr style='margin:5px 0;'>
                 <table style='width:100%;font-size:11px;'>
                     <tr><td><b>Severity Score:</b></td><td>{severity:.1f}/100</td></tr>
-                    <tr><td><b>PM2.5:</b></td><td>{row['pm25']:.1f} µg/m³</td></tr>
-                    <tr><td><b>PM10:</b></td><td>{row['pm10']:.1f} µg/m³</td></tr>
-                    <tr><td><b>Temperature:</b></td><td>{row['temp']:.1f}°C</td></tr>
+                    <tr><td><b>PM2.5:</b></td><td>{row['pm25']:.1f} ug/m3</td></tr>
+                    <tr><td><b>PM10:</b></td><td>{row['pm10']:.1f} ug/m3</td></tr>
+                    <tr><td><b>Temperature:</b></td><td>{row['temp']:.1f} C</td></tr>
                     <tr><td><b>Humidity:</b></td><td>{row['hum']:.1f}%</td></tr>
                     <tr><td><b>Wind Speed:</b></td><td>{row['wind']:.1f} km/h</td></tr>
                     <tr><td><b>Cyclone Risk:</b></td><td>{'YES' if row['cyclone_risk'] else 'NO'}</td></tr>
@@ -710,21 +792,27 @@ if apply and user_line:
                 weight=3
             ).add_to(severity_layer)
         
-        # Add heat map for selected parameters
-        if "PM2.5" in params:
-            pm25_data = [[row['lat'], row['lon'], row['pm25']/10] 
-                         for _, row in df.iterrows() if row['pm25'] is not None]
-            if pm25_data:
-                HeatMap(pm25_data, name="PM2.5 Heat", radius=20, blur=30,
-                       gradient={0.0: 'blue', 0.3: 'lime', 0.5: 'yellow', 0.7: 'orange', 1.0: 'red'},
-                       min_opacity=0.35, max_zoom=18).add_to(heatmap_layer)
-        
         # Add layers to map
+        pm25_heatmap.add_to(m2)
+        temp_heatmap.add_to(m2)
+        wind_heatmap.add_to(m2)
         severity_layer.add_to(m2)
-        heatmap_layer.add_to(m2)
         folium.LayerControl(collapsed=False).add_to(m2)
         
-        # Display map
+        # Add legend
+        legend_html = '''
+        <div style="position: fixed; bottom: 50px; left: 50px; width: 200px; height: auto; 
+        background-color: white; border:2px solid grey; z-index:9999; font-size:12px; padding: 10px">
+        <p style="margin:0; font-weight:bold;">Risk Levels</p>
+        <p style="margin:2px;"><span style="color:red;">●</span> Critical (>75)</p>
+        <p style="margin:2px;"><span style="color:orange;">●</span> High (60-75)</p>
+        <p style="margin:2px;"><span style="color:gold;">●</span> Moderate (40-60)</p>
+        <p style="margin:2px;"><span style="color:green;">●</span> Low (<40)</p>
+        </div>
+        '''
+        m2.get_root().html.add_child(folium.Element(legend_html))
+        
+        # Display enhanced map
         st_folium(m2, width=1200, height=600, key="analysis_map")
         
         # Data table with filtering
@@ -938,11 +1026,11 @@ if generate_pdf and st.session_state.analysis_df is not None:
         
         metrics_data = [
             ("Parameter", "Average", "Min", "Max", "WHO/Standard"),
-            ("PM2.5 (µg/m³)", f"{df['pm25'].mean():.1f}", f"{df['pm25'].min():.1f}", 
+            ("PM2.5 (ug/m3)", f"{df['pm25'].mean():.1f}", f"{df['pm25'].min():.1f}", 
              f"{df['pm25'].max():.1f}", "15 (Annual)"),
-            ("PM10 (µg/m³)", f"{df['pm10'].mean():.1f}", f"{df['pm10'].min():.1f}", 
+            ("PM10 (ug/m3)", f"{df['pm10'].mean():.1f}", f"{df['pm10'].min():.1f}", 
              f"{df['pm10'].max():.1f}", "45 (Annual)"),
-            ("Temperature (°C)", f"{df['temp'].mean():.1f}", f"{df['temp'].min():.1f}", 
+            ("Temperature (C)", f"{df['temp'].mean():.1f}", f"{df['temp'].min():.1f}", 
              f"{df['temp'].max():.1f}", "25-35 (Optimal)"),
             ("Humidity (%)", f"{df['hum'].mean():.1f}", f"{df['hum'].min():.1f}", 
              f"{df['hum'].max():.1f}", "40-70 (Optimal)"),
@@ -975,11 +1063,11 @@ if generate_pdf and st.session_state.analysis_df is not None:
         moderate = len(df[(df['severity_score'] > 40) & (df['severity_score'] <= 60)])
         low = len(df[df['severity_score'] <= 40])
         
-        pdf.cell(0, 6, f"• Critical Risk Zones (>75): {critical} points ({critical/len(df)*100:.1f}%)", ln=True)
-        pdf.cell(0, 6, f"• High Risk Zones (60-75): {high} points ({high/len(df)*100:.1f}%)", ln=True)
-        pdf.cell(0, 6, f"• Moderate Risk Zones (40-60): {moderate} points ({moderate/len(df)*100:.1f}%)", ln=True)
-        pdf.cell(0, 6, f"• Low Risk Zones (<40): {low} points ({low/len(df)*100:.1f}%)", ln=True)
-        pdf.cell(0, 6, f"• Cyclone-Prone Coverage: {(df['cyclone_risk'].sum()/len(df)*100):.1f}%", ln=True)
+        pdf.cell(0, 6, f"- Critical Risk Zones (>75): {critical} points ({critical/len(df)*100:.1f}%)", ln=True)
+        pdf.cell(0, 6, f"- High Risk Zones (60-75): {high} points ({high/len(df)*100:.1f}%)", ln=True)
+        pdf.cell(0, 6, f"- Moderate Risk Zones (40-60): {moderate} points ({moderate/len(df)*100:.1f}%)", ln=True)
+        pdf.cell(0, 6, f"- Low Risk Zones (<40): {low} points ({low/len(df)*100:.1f}%)", ln=True)
+        pdf.cell(0, 6, f"- Cyclone-Prone Coverage: {(df['cyclone_risk'].sum()/len(df)*100):.1f}%", ln=True)
         pdf.ln(4)
         
         # Insulator recommendations
@@ -998,7 +1086,7 @@ if generate_pdf and st.session_state.analysis_df is not None:
         
         for insulator, count in insulator_dist.items():
             percentage = (count / len(df)) * 100
-            pdf.cell(0, 5, f"  • {insulator}: {count} sections ({percentage:.1f}%)", ln=True)
+            pdf.cell(0, 5, f"  - {insulator}: {count} sections ({percentage:.1f}%)", ln=True)
         pdf.ln(3)
         
         # Detailed recommendations by zone
@@ -1013,9 +1101,9 @@ if generate_pdf and st.session_state.analysis_df is not None:
                 risk = "CRITICAL" if row['severity_score'] > 75 else "HIGH"
                 pdf.cell(0, 5, f"Point {row['point_id']} ({row['lat']:.4f}, {row['lon']:.4f}) - {risk} RISK", ln=True)
                 pdf.set_font("Arial", "", 8)
-                pdf.cell(0, 4, f"  Severity: {row['severity_score']:.1f}/100 | PM2.5: {row['pm25']:.1f} | Temp: {row['temp']:.1f}°C | Wind: {row['wind']:.1f} km/h", ln=True)
+                pdf.cell(0, 4, f"  Severity: {row['severity_score']:.1f}/100 | PM2.5: {row['pm25']:.1f} | Temp: {row['temp']:.1f}C | Wind: {row['wind']:.1f} km/h", ln=True)
                 pdf.set_font("Arial", "I", 8)
-                pdf.cell(0, 4, f"  → Recommended: {row['recommended_insulator']} (Cost Factor: {row['insulator_cost_factor']:.2f}x)", ln=True)
+                pdf.cell(0, 4, f"  -> Recommended: {row['recommended_insulator']} (Cost Factor: {row['insulator_cost_factor']:.2f}x)", ln=True)
         
         pdf.ln(4)
         
@@ -1028,35 +1116,35 @@ if generate_pdf and st.session_state.analysis_df is not None:
         recommendations = []
         
         if df['pm25'].mean() > 100:
-            recommendations.append("• CRITICAL: Deploy hydrophobic silicone insulators with self-cleaning properties due to severe pollution (PM2.5 > 100 µg/m³)")
+            recommendations.append("- CRITICAL: Deploy hydrophobic silicone insulators with self-cleaning properties due to severe pollution (PM2.5 > 100 ug/m3)")
         elif df['pm25'].mean() > 60:
-            recommendations.append("• Install anti-fog ceramic or polymer composite insulators for elevated pollution levels")
+            recommendations.append("- Install anti-fog ceramic or polymer composite insulators for elevated pollution levels")
         
         if df['temp'].max() > 45:
-            recommendations.append("• CRITICAL: Use high-temperature rated materials (>65°C tolerance) for extreme heat zones")
+            recommendations.append("- CRITICAL: Use high-temperature rated materials (>65C tolerance) for extreme heat zones")
         elif df['temp'].mean() > 38:
-            recommendations.append("• Specify insulators with enhanced thermal resistance (50-60°C range)")
+            recommendations.append("- Specify insulators with enhanced thermal resistance (50-60C range)")
         
         if df['hum'].mean() > 80:
-            recommendations.append("• Apply corrosion-resistant coatings and use hydrophobic insulators for high-humidity environment")
+            recommendations.append("- Apply corrosion-resistant coatings and use hydrophobic insulators for high-humidity environment")
         
         if df['wind'].max() > 45:
-            recommendations.append("• CRITICAL: Reinforce tower structures and use aerodynamic insulator designs for high wind loads")
+            recommendations.append("- CRITICAL: Reinforce tower structures and use aerodynamic insulator designs for high wind loads")
         elif df['wind'].mean() > 30:
-            recommendations.append("• Consider wind load factors in structural design and insulator selection")
+            recommendations.append("- Consider wind load factors in structural design and insulator selection")
         
         if df['cyclone_risk'].sum() > len(df) * 0.3:
-            recommendations.append("• Implement cyclone-resistant tower designs and reinforced insulator mounting systems")
+            recommendations.append("- Implement cyclone-resistant tower designs and reinforced insulator mounting systems")
         
         if critical > 0:
-            recommendations.append(f"• Prioritize upgrades for {critical} critical risk zones identified in the assessment")
+            recommendations.append(f"- Prioritize upgrades for {critical} critical risk zones identified in the assessment")
         
-        recommendations.append("• Conduct quarterly inspections focusing on high-risk segments")
-        recommendations.append("• Implement real-time environmental monitoring system along the corridor")
+        recommendations.append("- Conduct quarterly inspections focusing on high-risk segments")
+        recommendations.append("- Implement real-time environmental monitoring system along the corridor")
         
         if not recommendations:
-            recommendations.append("• Standard insulator specifications are suitable for this corridor")
-            recommendations.append("• Maintain routine inspection and maintenance schedules")
+            recommendations.append("- Standard insulator specifications are suitable for this corridor")
+            recommendations.append("- Maintain routine inspection and maintenance schedules")
         
         for rec in recommendations:
             pdf.multi_cell(0, 5, rec)
