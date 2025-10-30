@@ -296,17 +296,24 @@ def create_parameter_map(df, param_key, param_name, user_line, circle_radius_m=5
     # Add circle markers for each sample point
     for _, row in df.iterrows():
         value = row[param_key]
-        risk_score = calculate_risk_score(param_name, value)
+        
+        # Get the risk score for this parameter
+        risk_key = f"{param_key}_risk"
+        if risk_key in row:
+            risk_score = row[risk_key]
+        else:
+            risk_score = calculate_risk_score(param_name, value)
+        
         risk_level, color = get_risk_badge(risk_score)
         
-        # Create circle marker with configurable radius
+        # Create large circle marker with configurable radius
         folium.Circle(
             location=[row['lat'], row['lon']],
             radius=circle_radius_m,
             color=color,
             fill=True,
             fillColor=color,
-            fillOpacity=0.5,
+            fillOpacity=0.4,
             weight=2,
             popup=f"""
                 <b>{param_name}</b><br>
@@ -317,49 +324,63 @@ def create_parameter_map(df, param_key, param_name, user_line, circle_radius_m=5
             """
         ).add_to(m)
         
-        # Add center marker
+        # Add center marker (smaller, solid)
         folium.CircleMarker(
             location=[row['lat'], row['lon']],
-            radius=5,
+            radius=8,
             color=color,
             fill=True,
             fillColor=color,
             fillOpacity=1.0,
-            weight=2
+            weight=3,
+            popup=f"Point {row['point_id']}"
         ).add_to(m)
     
-    # Add heat map layer
-    heat_data = [[row['lat'], row['lon'], row[f"{param_key}_risk"]] for _, row in df.iterrows()]
-    HeatMap(
-        heat_data,
-        radius=20,
-        blur=30,
-        max_zoom=13,
-        gradient={
-            0.0: '#2ecc71',
-            0.4: '#f1c40f',
-            0.6: '#e67e22',
-            0.8: '#c0392b',
-            1.0: '#8b0000'
-        },
-        min_opacity=0.3
-    ).add_to(m)
+    # Add heat map layer for gradient effect
+    heat_data = []
+    for _, row in df.iterrows():
+        risk_key = f"{param_key}_risk"
+        if risk_key in row:
+            risk_value = row[risk_key] / 100  # Normalize to 0-1
+        else:
+            risk_value = calculate_risk_score(param_name, row[param_key]) / 100
+        
+        heat_data.append([row['lat'], row['lon'], risk_value])
+    
+    if heat_data:
+        HeatMap(
+            heat_data,
+            radius=25,
+            blur=35,
+            max_zoom=13,
+            gradient={
+                0.0: '#2ecc71',   # Green (Low)
+                0.4: '#f1c40f',   # Yellow (Moderate)
+                0.6: '#e67e22',   # Orange (High)
+                0.8: '#c0392b',   # Red (Critical)
+                1.0: '#8b0000'    # Dark Red (Extreme)
+            },
+            min_opacity=0.3
+        ).add_to(m)
     
     # Add legend
     legend_html = f'''
-    <div style="position: fixed; bottom: 50px; right: 50px; width: 180px; height: auto;
-    background-color: white; border:2px solid grey; z-index:9999; font-size:11px; padding: 10px;">
-    <p style="margin:0; font-weight:bold;">{param_name} Risk Levels</p>
-    <p style="margin:2px;"><span style="color:#c0392b;">●</span> Critical (>80)</p>
-    <p style="margin:2px;"><span style="color:#e67e22;">●</span> High (60-80)</p>
-    <p style="margin:2px;"><span style="color:#f1c40f;">●</span> Moderate (40-60)</p>
-    <p style="margin:2px;"><span style="color:#2ecc71;">●</span> Low (<40)</p>
-    <p style="margin:5px 0 0 0; font-size:10px; color:grey;">Circle radius: {circle_radius_m/1000:.1f} km</p>
+    <div style="position: fixed; bottom: 50px; right: 50px; width: 200px; height: auto;
+    background-color: white; border:3px solid #003366; z-index:9999; font-size:11px; 
+    padding: 12px; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.3);">
+    <p style="margin:0; font-weight:bold; color:#003366; font-size:12px; border-bottom: 2px solid #003366; padding-bottom: 5px;">{param_name} Risk Levels</p>
+    <p style="margin:5px 0 2px 0;"><span style="color:#c0392b; font-size:16px;">●</span> Critical (>80)</p>
+    <p style="margin:2px 0;"><span style="color:#e67e22; font-size:16px;">●</span> High (60-80)</p>
+    <p style="margin:2px 0;"><span style="color:#f1c40f; font-size:16px;">●</span> Moderate (40-60)</p>
+    <p style="margin:2px 0;"><span style="color:#2ecc71; font-size:16px;">●</span> Low (<40)</p>
+    <p style="margin:8px 0 0 0; font-size:10px; color:#666; border-top: 1px solid #ddd; padding-top: 5px;">
+        <b>Circle radius:</b> {circle_radius_m/1000:.1f} km
+    </p>
     </div>
     '''
     m.get_root().html.add_child(folium.Element(legend_html))
     
-    # Fit bounds to show all markers
+    # Fit bounds to show all markers with padding
     bounds = [[row['lat'], row['lon']] for _, row in df.iterrows()]
     if bounds:
         m.fit_bounds(bounds, padding=[50, 50])
@@ -370,16 +391,37 @@ def create_parameter_map(df, param_key, param_name, user_line, circle_radius_m=5
 # MAIN APP
 # ============================================================================
 
-# Header
-st.markdown("""
-<div style='text-align: center; padding: 1.5rem; background: linear-gradient(135deg, #1a1a1a 0%, #2c3e50 100%); border-radius: 10px; margin-bottom: 2rem; box-shadow: 0 4px 6px rgba(0,0,0,0.1);'>
-    <h1 style='color: white; margin: 0; font-size: 2.8rem; font-weight: 700; letter-spacing: 3px;'>DECCAN</h1>
-    <p style='color: #ecf0f1; margin: 0.3rem 0; font-size: 0.9rem; letter-spacing: 2px;'>SINCE 1966</p>
-    <hr style='border: 1px solid #34495e; margin: 1rem 0;'>
-    <p style='color: #bdc3c7; margin: 0; font-size: 1.2rem; font-weight: 300;'>Environmental Risk Assessment</p>
-    <p style='color: #95a5a6; margin: 0.3rem 0 0 0; font-size: 0.95rem;'>IMD Historical Data (2015-2024) - Maximum Values</p>
-</div>
-""", unsafe_allow_html=True)
+# Header with Logo and Styled Title
+col_logo, col_title = st.columns([1, 4])
+
+with col_logo:
+    logo_paths = ["deccan_logo.png", "../deccan_logo.png", "./deccan_logo.png"]
+    logo_displayed = False
+    for logo_path in logo_paths:
+        if os.path.exists(logo_path):
+            try:
+                st.image(logo_path, width=180)
+                logo_displayed = True
+                break
+            except:
+                pass
+    
+    if not logo_displayed:
+        st.markdown("### DECCAN")
+
+with col_title:
+    st.markdown("""
+    <div style='padding-top: 20px;'>
+        <h1 style='color: #003366; margin: 0; font-size: 2.2rem; font-weight: 700; letter-spacing: 1px;'>
+            Transmission Line Environmental Analysis
+        </h1>
+        <p style='color: #5a6c7d; margin: 5px 0 0 0; font-size: 1rem; font-weight: 400;'>
+            IMD Historical Data (2015-2024) • Maximum Value Risk Assessment
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+st.markdown("<hr style='margin: 1rem 0; border: none; border-top: 2px solid #003366;'>", unsafe_allow_html=True)
 
 # Session State
 if 'user_line' not in st.session_state:
