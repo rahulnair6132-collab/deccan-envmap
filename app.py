@@ -280,18 +280,23 @@ def create_parameter_map(df, param_key, param_name, user_line, circle_radius_m=5
     m = folium.Map(
         location=[center_lat, center_lon],
         zoom_start=8,
-        tiles="CartoDB positron"
+        tiles="CartoDB positron",
+        control_scale=True
     )
     
-    # Draw transmission line (prominent black line)
+    # Draw transmission line (prominent black line) - FIRST
     line_coords = [(p[0], p[1]) for p in list(user_line.coords)]
     folium.PolyLine(
         line_coords,
         color="#000000",
         weight=6,
         opacity=1.0,
-        popup="Transmission Line"
+        popup="Transmission Line",
+        tooltip="Transmission Line"
     ).add_to(m)
+    
+    # Collect heat map data
+    heat_data = []
     
     # Add circle markers for each sample point
     for _, row in df.iterrows():
@@ -302,9 +307,13 @@ def create_parameter_map(df, param_key, param_name, user_line, circle_radius_m=5
         if risk_key in row:
             risk_score = row[risk_key]
         else:
+            # Fallback: calculate on the fly
             risk_score = calculate_risk_score(param_name, value)
         
         risk_level, color = get_risk_badge(risk_score)
+        
+        # Add to heat map data (normalized 0-1)
+        heat_data.append([row['lat'], row['lon'], risk_score / 100])
         
         # Create large circle marker with configurable radius
         folium.Circle(
@@ -315,13 +324,18 @@ def create_parameter_map(df, param_key, param_name, user_line, circle_radius_m=5
             fillColor=color,
             fillOpacity=0.4,
             weight=2,
-            popup=f"""
-                <b>{param_name}</b><br>
-                Max Value: {value:.1f}<br>
-                Risk Score: {risk_score:.1f}/100<br>
-                Status: {risk_level}<br>
-                Radius: {circle_radius_m/1000:.1f} km
-            """
+            popup=folium.Popup(f"""
+                <div style='font-family: Arial; min-width: 200px;'>
+                    <h4 style='margin: 0 0 10px 0; color: {color};'>{param_name}</h4>
+                    <table style='width: 100%; font-size: 12px;'>
+                        <tr><td><b>Value:</b></td><td>{value:.1f}</td></tr>
+                        <tr><td><b>Risk Score:</b></td><td>{risk_score:.1f}/100</td></tr>
+                        <tr><td><b>Status:</b></td><td>{risk_level}</td></tr>
+                        <tr><td><b>Point ID:</b></td><td>{row['point_id']}</td></tr>
+                    </table>
+                </div>
+            """, max_width=300),
+            tooltip=f"{param_name}: {value:.1f} ({risk_level})"
         ).add_to(m)
         
         # Add center marker (smaller, solid)
@@ -333,21 +347,12 @@ def create_parameter_map(df, param_key, param_name, user_line, circle_radius_m=5
             fillColor=color,
             fillOpacity=1.0,
             weight=3,
-            popup=f"Point {row['point_id']}"
+            popup=f"Point {row['point_id']}: {value:.1f}",
+            tooltip=f"Point {row['point_id']}"
         ).add_to(m)
     
-    # Add heat map layer for gradient effect
-    heat_data = []
-    for _, row in df.iterrows():
-        risk_key = f"{param_key}_risk"
-        if risk_key in row:
-            risk_value = row[risk_key] / 100  # Normalize to 0-1
-        else:
-            risk_value = calculate_risk_score(param_name, row[param_key]) / 100
-        
-        heat_data.append([row['lat'], row['lon'], risk_value])
-    
-    if heat_data:
+    # Add heat map layer for gradient effect - ONLY if we have data
+    if heat_data and len(heat_data) > 0:
         HeatMap(
             heat_data,
             radius=25,
@@ -360,29 +365,47 @@ def create_parameter_map(df, param_key, param_name, user_line, circle_radius_m=5
                 0.8: '#c0392b',   # Red (Critical)
                 1.0: '#8b0000'    # Dark Red (Extreme)
             },
-            min_opacity=0.3
+            min_opacity=0.3,
+            name=f"{param_name} Heat Map"
         ).add_to(m)
     
-    # Add legend
+    # Add legend with improved styling
     legend_html = f'''
-    <div style="position: fixed; bottom: 50px; right: 50px; width: 200px; height: auto;
-    background-color: white; border:3px solid #003366; z-index:9999; font-size:11px; 
-    padding: 12px; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.3);">
-    <p style="margin:0; font-weight:bold; color:#003366; font-size:12px; border-bottom: 2px solid #003366; padding-bottom: 5px;">{param_name} Risk Levels</p>
-    <p style="margin:5px 0 2px 0;"><span style="color:#c0392b; font-size:16px;">●</span> Critical (>80)</p>
-    <p style="margin:2px 0;"><span style="color:#e67e22; font-size:16px;">●</span> High (60-80)</p>
-    <p style="margin:2px 0;"><span style="color:#f1c40f; font-size:16px;">●</span> Moderate (40-60)</p>
-    <p style="margin:2px 0;"><span style="color:#2ecc71; font-size:16px;">●</span> Low (<40)</p>
-    <p style="margin:8px 0 0 0; font-size:10px; color:#666; border-top: 1px solid #ddd; padding-top: 5px;">
-        <b>Circle radius:</b> {circle_radius_m/1000:.1f} km
-    </p>
+    <div style="position: fixed; bottom: 50px; right: 50px; width: 220px; height: auto;
+    background-color: white; border: 3px solid #003366; z-index: 9999; font-size: 11px; 
+    padding: 12px; border-radius: 8px; box-shadow: 0 4px 8px rgba(0,0,0,0.3);">
+        <p style="margin: 0 0 8px 0; font-weight: bold; color: #003366; font-size: 13px; 
+        border-bottom: 2px solid #003366; padding-bottom: 6px;">
+            {param_name} Risk Levels
+        </p>
+        <p style="margin: 5px 0 2px 0;">
+            <span style="color: #c0392b; font-size: 18px; font-weight: bold;">●</span> 
+            <span style="font-weight: 600;">Critical</span> (>80)
+        </p>
+        <p style="margin: 2px 0;">
+            <span style="color: #e67e22; font-size: 18px; font-weight: bold;">●</span> 
+            <span style="font-weight: 600;">High</span> (60-80)
+        </p>
+        <p style="margin: 2px 0;">
+            <span style="color: #f1c40f; font-size: 18px; font-weight: bold;">●</span> 
+            <span style="font-weight: 600;">Moderate</span> (40-60)
+        </p>
+        <p style="margin: 2px 0;">
+            <span style="color: #2ecc71; font-size: 18px; font-weight: bold;">●</span> 
+            <span style="font-weight: 600;">Low</span> (<40)
+        </p>
+        <p style="margin: 10px 0 0 0; font-size: 10px; color: #666; 
+        border-top: 1px solid #ddd; padding-top: 6px;">
+            <b>Analysis Radius:</b> {circle_radius_m/1000:.1f} km<br>
+            <b>Sample Points:</b> {len(df)}
+        </p>
     </div>
     '''
     m.get_root().html.add_child(folium.Element(legend_html))
     
     # Fit bounds to show all markers with padding
     bounds = [[row['lat'], row['lon']] for _, row in df.iterrows()]
-    if bounds:
+    if bounds and len(bounds) > 1:
         m.fit_bounds(bounds, padding=[50, 50])
     
     return m
