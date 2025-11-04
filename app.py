@@ -15,6 +15,8 @@ from io import BytesIO
 from PIL import Image
 import base64
 import os
+from fpdf import FPDF
+import tempfile
 
 # Page configuration
 st.set_page_config(
@@ -68,6 +70,365 @@ if 'analysis_complete' not in st.session_state:
 if 'analysis_results' not in st.session_state:
     st.session_state.analysis_results = {}
 
+# PDF Generation Class
+class DeccanPDF(FPDF):
+    def __init__(self):
+        super().__init__()
+        self.set_auto_page_break(auto=True, margin=15)
+    
+    def header(self):
+        # Add logo if available
+        logo_path = "deccan_logo.png"
+        if os.path.exists(logo_path):
+            try:
+                self.image(logo_path, x=10, y=8, w=50)
+            except:
+                pass
+        
+        # Header line
+        self.set_draw_color(0, 51, 102)
+        self.set_line_width(0.8)
+        self.line(10, 25, 200, 25)
+        self.ln(10)
+    
+    def footer(self):
+        self.set_y(-15)
+        self.set_font('Arial', 'I', 8)
+        self.set_text_color(128, 128, 128)
+        self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
+    
+    def chapter_title(self, title):
+        self.set_font('Arial', 'B', 16)
+        self.set_fill_color(0, 51, 102)
+        self.set_text_color(255, 255, 255)
+        self.cell(0, 10, title, 0, 1, 'L', 1)
+        self.ln(4)
+    
+    def section_title(self, title):
+        self.set_font('Arial', 'B', 12)
+        self.set_text_color(0, 51, 102)
+        self.cell(0, 8, title, 0, 1)
+        self.set_text_color(0, 0, 0)
+        self.ln(2)
+
+def generate_professional_pdf(line_name, analysis, client_name, project_code, circle_radius, sample_spacing):
+    """Generate professional PDF report"""
+    
+    pdf = DeccanPDF()
+    df = analysis['dataframe']
+    line_data = analysis['line_data']
+    
+    # Calculate corridor length
+    coords = [[p['lat'], p['lon']] for p in line_data]
+    line = LineString([(lon, lat) for lat, lon in coords])
+    corridor_length = line.length * 111  # Approximate km
+    
+    # PAGE 1: COVER PAGE
+    pdf.add_page()
+    pdf.ln(30)
+    
+    # Title
+    pdf.set_font('Arial', 'B', 28)
+    pdf.set_text_color(0, 51, 102)
+    pdf.cell(0, 15, 'TRANSMISSION LINE', 0, 1, 'C')
+    pdf.set_font('Arial', 'B', 22)
+    pdf.cell(0, 12, 'Environmental Risk Assessment', 0, 1, 'C')
+    pdf.ln(15)
+    
+    # Project info box
+    pdf.set_fill_color(240, 240, 240)
+    pdf.set_font('Arial', 'B', 11)
+    pdf.set_text_color(0, 51, 102)
+    pdf.cell(0, 8, 'PROJECT INFORMATION', 0, 1, 'L', 1)
+    
+    pdf.set_font('Arial', '', 11)
+    pdf.set_text_color(0, 0, 0)
+    pdf.ln(3)
+    
+    info_items = [
+        ('Client:', client_name),
+        ('Project Code:', project_code),
+        ('Line Description:', line_name),
+        ('Report Generated:', datetime.now().strftime('%d %B %Y, %H:%M IST')),
+        ('Analysis Points:', str(len(df))),
+        ('Corridor Length:', f'{corridor_length:.2f} km'),
+        ('Data Source:', 'IMD (India Meteorological Department)'),
+        ('Data Period:', '2015-2024 (10 Years - Maximum Values)'),
+        ('Circle Radius:', f'{circle_radius} km'),
+        ('Sample Spacing:', f'{sample_spacing} km')
+    ]
+    
+    for label, value in info_items:
+        pdf.set_font('Arial', 'B', 10)
+        pdf.cell(60, 6, label, 0, 0)
+        pdf.set_font('Arial', '', 10)
+        pdf.cell(0, 6, value, 0, 1)
+    
+    pdf.ln(10)
+    
+    # Overall risk status
+    overall_risk = analysis['overall_risk']
+    if overall_risk >= 75:
+        fill_color = (192, 57, 43)
+        status = "CRITICAL"
+    elif overall_risk >= 60:
+        fill_color = (230, 126, 34)
+        status = "HIGH"
+    elif overall_risk >= 40:
+        fill_color = (241, 196, 15)
+        status = "MODERATE"
+    else:
+        fill_color = (46, 204, 113)
+        status = "LOW"
+    
+    pdf.set_fill_color(*fill_color)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font('Arial', 'B', 18)
+    pdf.cell(0, 12, f'OVERALL STATUS: {status}', 0, 1, 'C', 1)
+    pdf.set_text_color(0, 0, 0)
+    pdf.ln(3)
+    
+    pdf.set_font('Arial', '', 11)
+    pdf.cell(0, 6, f'Overall Severity Score: {overall_risk:.1f}/100', 0, 1, 'C')
+    pdf.ln(5)
+    
+    pdf.set_font('Arial', 'I', 9)
+    pdf.set_text_color(100, 100, 100)
+    pdf.multi_cell(0, 5, 'This assessment is based on IMD historical maximum values observed over 10 years (2015-2024). All parameters represent extreme conditions that equipment must withstand.')
+    
+    # PAGE 2: EXECUTIVE SUMMARY
+    pdf.add_page()
+    pdf.chapter_title('EXECUTIVE SUMMARY')
+    
+    pdf.set_font('Arial', '', 10)
+    summary_text = f"This comprehensive assessment evaluates environmental conditions along a {corridor_length:.2f} km transmission corridor across {len(df)} strategic sampling points. The analysis uses IMD (India Meteorological Department) historical data spanning 10 years (2015-2024), focusing on maximum observed values to ensure equipment specifications account for worst-case scenarios."
+    pdf.multi_cell(0, 5, summary_text)
+    pdf.ln(5)
+    
+    # Risk distribution
+    pdf.section_title('RISK DISTRIBUTION ANALYSIS')
+    
+    risk_scores = [analysis['temp_risk'], analysis['rainfall_risk'], analysis['humidity_risk'],
+                   analysis['wind_risk'], analysis['solar_risk'], analysis['salinity_risk'],
+                   analysis['seismic_risk']]
+    
+    critical = sum(1 for s in risk_scores if s >= 75)
+    high = sum(1 for s in risk_scores if 60 <= s < 75)
+    moderate = sum(1 for s in risk_scores if 40 <= s < 60)
+    low = sum(1 for s in risk_scores if s < 40)
+    total = len(risk_scores)
+    
+    pdf.set_font('Arial', '', 10)
+    pdf.cell(0, 6, f'- Critical Risk Zones (>75): {critical} parameters ({critical/total*100:.1f}%)', 0, 1)
+    pdf.cell(0, 6, f'- High Risk Zones (60-75): {high} parameters ({high/total*100:.1f}%)', 0, 1)
+    pdf.cell(0, 6, f'- Moderate Risk Zones (40-60): {moderate} parameters ({moderate/total*100:.1f}%)', 0, 1)
+    pdf.cell(0, 6, f'- Low Risk Zones (<40): {low} parameters ({low/total*100:.1f}%)', 0, 1)
+    pdf.ln(5)
+    
+    # KEY ENVIRONMENTAL METRICS TABLE
+    pdf.section_title('KEY ENVIRONMENTAL METRICS')
+    
+    # Table header
+    pdf.set_fill_color(0, 51, 102)
+    pdf.set_text_color(255, 255, 255)
+    pdf.set_font('Arial', 'B', 9)
+    
+    col_widths = [55, 30, 25, 25, 35]
+    headers = ['Parameter', 'Average', 'Min', 'Max', 'Risk Score']
+    
+    for i, header in enumerate(headers):
+        pdf.cell(col_widths[i], 7, header, 1, 0, 'C', 1)
+    pdf.ln()
+    
+    # Table rows
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font('Arial', '', 9)
+    
+    metrics_data = [
+        ('Temperature (C)', df['temp_max'].mean(), df['temp_max'].min(), df['temp_max'].max(), analysis['temp_risk']),
+        ('Rainfall (mm)', df['rainfall_max'].mean(), df['rainfall_max'].min(), df['rainfall_max'].max(), analysis['rainfall_risk']),
+        ('Humidity (%)', df['humidity_max'].mean(), df['humidity_max'].min(), df['humidity_max'].max(), analysis['humidity_risk']),
+        ('Wind Speed (km/h)', df['wind_max'].mean(), df['wind_max'].min(), df['wind_max'].max(), analysis['wind_risk']),
+        ('Solar (kWh/m2/day)', df['solar_max'].mean(), df['solar_max'].min(), df['solar_max'].max(), analysis['solar_risk']),
+        ('Salinity (ppm)', df['salinity_max'].mean(), df['salinity_max'].min(), df['salinity_max'].max(), analysis['salinity_risk']),
+        ('Seismic Zone', df['seismic_zone'].mean(), df['seismic_zone'].min(), df['seismic_zone'].max(), analysis['seismic_risk'])
+    ]
+    
+    fill = False
+    for param, avg, min_val, max_val, risk in metrics_data:
+        pdf.set_fill_color(245, 245, 245)
+        pdf.cell(col_widths[0], 6, param, 1, 0, 'L', fill)
+        pdf.cell(col_widths[1], 6, f'{avg:.1f}', 1, 0, 'C', fill)
+        pdf.cell(col_widths[2], 6, f'{min_val:.1f}', 1, 0, 'C', fill)
+        pdf.cell(col_widths[3], 6, f'{max_val:.1f}', 1, 0, 'C', fill)
+        pdf.cell(col_widths[4], 6, f'{risk:.1f}/100', 1, 0, 'C', fill)
+        pdf.ln()
+        fill = not fill
+    
+    # PAGE 3: DETAILED PARAMETER ANALYSIS
+    pdf.add_page()
+    pdf.chapter_title('DETAILED PARAMETER ANALYSIS')
+    
+    param_details = [
+        ('Temperature', 'temp_max', 'temp_risk', 'C', 'temp_days'),
+        ('Rainfall', 'rainfall_max', 'rainfall_risk', 'mm', 'rainfall_days'),
+        ('Humidity', 'humidity_max', 'humidity_risk', '%', 'humidity_days'),
+        ('Wind Speed', 'wind_max', 'wind_risk', 'km/h', 'wind_days'),
+        ('Solar Radiation', 'solar_max', 'solar_risk', 'kWh/m2/day', None),
+        ('Salinity', 'salinity_max', 'salinity_risk', 'ppm', None),
+        ('Seismic Activity', 'seismic_zone', 'seismic_risk', '(Zone)', 'seismic_days')
+    ]
+    
+    for param_name, value_key, risk_key, unit, days_key in param_details:
+        pdf.section_title(param_name)
+        
+        risk_score = analysis[risk_key]
+        if risk_score >= 75:
+            risk_level = "CRITICAL"
+        elif risk_score >= 60:
+            risk_level = "HIGH"
+        elif risk_score >= 40:
+            risk_level = "MODERATE"
+        else:
+            risk_level = "LOW"
+        
+        pdf.set_font('Arial', 'B', 10)
+        pdf.cell(0, 6, f'Risk Score: {risk_score:.1f}/100 ({risk_level})', 0, 1)
+        
+        pdf.set_font('Arial', '', 9)
+        pdf.cell(50, 5, f'  Maximum Value:', 0, 0)
+        pdf.cell(0, 5, f'{df[value_key].max():.1f} {unit}', 0, 1)
+        pdf.cell(50, 5, f'  Minimum Value:', 0, 0)
+        pdf.cell(0, 5, f'{df[value_key].min():.1f} {unit}', 0, 1)
+        pdf.cell(50, 5, f'  Average Value:', 0, 0)
+        pdf.cell(0, 5, f'{df[value_key].mean():.1f} {unit}', 0, 1)
+        
+        if days_key and days_key in df.columns:
+            avg_days = df[days_key].mean()
+            pdf.cell(50, 5, f'  Frequency:', 0, 0)
+            pdf.cell(0, 5, f'~{avg_days:.0f} days/year (10-year average)', 0, 1)
+        
+        pdf.ln(3)
+    
+    # PAGE 4: RECOMMENDATIONS
+    pdf.add_page()
+    pdf.chapter_title('TECHNICAL RECOMMENDATIONS')
+    
+    pdf.set_font('Arial', '', 10)
+    recommendations = []
+    
+    if analysis['temp_risk'] > 75:
+        recommendations.append(('CRITICAL', 'Deploy high-temperature rated insulators (>50C tolerance). Maximum temperature exceeds 45C in multiple zones.'))
+    elif analysis['temp_risk'] > 60:
+        recommendations.append(('HIGH', 'Use enhanced thermal-resistant insulators for sustained high temperatures (40-45C range).'))
+    
+    if analysis['rainfall_risk'] > 75:
+        recommendations.append(('CRITICAL', 'Install hydrophobic silicone insulators with superior water-shedding properties. Heavy rainfall exceeds 350mm.'))
+    elif analysis['rainfall_risk'] > 60:
+        recommendations.append(('HIGH', 'Use polymer composite insulators designed for high-moisture environments.'))
+    
+    if analysis['humidity_risk'] > 75:
+        recommendations.append(('CRITICAL', 'Apply specialized anti-tracking coatings. Humidity regularly exceeds 90%.'))
+    elif analysis['humidity_risk'] > 60:
+        recommendations.append(('HIGH', 'Use hydrophobic insulators to prevent surface moisture accumulation.'))
+    
+    if analysis['wind_risk'] > 75:
+        recommendations.append(('CRITICAL', 'Reinforce tower structures for extreme wind loads (>80 km/h). Use aerodynamic insulator designs.'))
+    elif analysis['wind_risk'] > 60:
+        recommendations.append(('HIGH', 'Implement enhanced structural support for sustained high winds (60-80 km/h).'))
+    
+    if analysis['solar_risk'] > 70:
+        recommendations.append(('HIGH', 'Deploy UV-resistant materials with enhanced weathering protection (>6.5 kWh/m2/day solar exposure).'))
+    
+    if analysis['salinity_risk'] > 75:
+        recommendations.append(('CRITICAL', 'Install anti-salt fog insulators with specialized surface treatments. Coastal salinity exceeds 33,000 ppm.'))
+    elif analysis['salinity_risk'] > 60:
+        recommendations.append(('HIGH', 'Use corrosion-resistant materials for moderate coastal salinity (25,000-33,000 ppm).'))
+    
+    if analysis['seismic_risk'] > 70:
+        recommendations.append(('HIGH', 'Implement seismic-resistant tower designs per Zone 4/5 specifications (BIS standards).'))
+    
+    if not recommendations:
+        recommendations.append(('LOW', 'Standard insulator specifications are adequate for this corridor.'))
+        recommendations.append(('INFO', 'Maintain routine inspection and preventive maintenance schedules.'))
+    
+    for priority, rec in recommendations:
+        if priority == "CRITICAL":
+            pdf.set_text_color(192, 57, 43)
+        elif priority == "HIGH":
+            pdf.set_text_color(230, 126, 34)
+        else:
+            pdf.set_text_color(0, 0, 0)
+        
+        pdf.set_font('Arial', 'B', 10)
+        pdf.cell(0, 6, f'[{priority}]', 0, 1)
+        pdf.set_text_color(0, 0, 0)
+        pdf.set_font('Arial', '', 10)
+        pdf.multi_cell(0, 5, f'  {rec}')
+        pdf.ln(2)
+    
+    pdf.ln(5)
+    pdf.section_title('GENERAL RECOMMENDATIONS')
+    pdf.set_font('Arial', '', 10)
+    
+    general_recs = [
+        'Implement real-time environmental monitoring system along the entire corridor',
+        'Conduct quarterly inspections with focus on high-risk segments identified in this report',
+        'Maintain detailed maintenance logs for all critical zones (severity >60)',
+        'Review and update risk assessment annually with latest IMD data',
+        'Establish emergency response protocols for extreme weather events',
+        'Train maintenance personnel on environmental risk factors specific to this corridor'
+    ]
+    
+    for rec in general_recs:
+        pdf.cell(5, 5, '-', 0, 0)
+        pdf.multi_cell(0, 5, rec)
+    
+    # PAGE 5: DATA SOURCES
+    pdf.add_page()
+    pdf.chapter_title('DATA SOURCES & METHODOLOGY')
+    
+    pdf.section_title('Primary Data Source')
+    pdf.set_font('Arial', '', 10)
+    pdf.multi_cell(0, 5, 'IMD - India Meteorological Department (mausam.imd.gov.in)\nOfficial national meteorological service providing comprehensive environmental data across India.')
+    pdf.ln(3)
+    
+    pdf.section_title('Data Specifications')
+    pdf.set_font('Arial', '', 9)
+    specs = [
+        ('Time Period:', '2015-2024 (10 years)'),
+        ('Spatial Resolution:', '0.25 degrees x 0.25 degrees (~25-30 km grid)'),
+        ('Data Type:', 'Historical Maximum Values'),
+        ('Parameters:', 'Temperature, Rainfall, Humidity, Wind Speed, Solar Radiation'),
+        ('Additional Sources:', 'Coastal salinity from marine monitoring; Seismic zones from BIS')
+    ]
+    
+    for label, value in specs:
+        pdf.set_font('Arial', 'B', 9)
+        pdf.cell(50, 5, f'  {label}', 0, 0)
+        pdf.set_font('Arial', '', 9)
+        pdf.cell(0, 5, value, 0, 1)
+    
+    pdf.ln(3)
+    pdf.section_title('Methodology')
+    pdf.set_font('Arial', '', 9)
+    pdf.multi_cell(0, 5, 'This assessment uses maximum observed values over the 10-year period rather than averages. This approach ensures that equipment specifications and maintenance protocols account for worst-case scenarios that occur periodically along the transmission corridor.')
+    pdf.ln(2)
+    pdf.multi_cell(0, 5, 'Risk scoring: Each environmental parameter is evaluated on a 0-100 scale based on impact to transmission line insulators. Scores are derived from industry standards, manufacturer specifications, and empirical failure data.')
+    
+    pdf.ln(5)
+    pdf.section_title('Disclaimer')
+    pdf.set_font('Arial', 'I', 8)
+    pdf.set_text_color(100, 100, 100)
+    pdf.multi_cell(0, 4, 'This report is generated based on historical environmental data and predictive risk models. Actual conditions may vary. Final equipment specifications and installation designs should be validated through detailed site surveys, engineering analysis, and consultation with equipment manufacturers. Deccan Enterprises Pvt. Ltd. provides this assessment as a planning tool and does not guarantee specific outcomes.')
+    
+    # Save PDF
+    pdf_filename = f"{project_code}_{line_name.replace(' ', '_')}_Report_{datetime.now().strftime('%Y%m%d')}.pdf"
+    pdf_path = os.path.join(tempfile.gettempdir(), pdf_filename)
+    pdf.output(pdf_path)
+    
+    return pdf_path, pdf_filename
+
 # Load logo function
 def load_logo():
     """Load Deccan logo from file"""
@@ -120,7 +481,7 @@ if input_method == "Enter Coordinates":
         st.session_state.coord_lines = [{'name': 'Line 1', 'points': [{'lat': '', 'lon': ''}]}]
     
     for line_idx, line in enumerate(st.session_state.coord_lines):
-        with st.expander(f"🔷 {line['name']}", expanded=True):
+        with st.expander(f"📍 {line['name']}", expanded=True):
             line['name'] = st.text_input(f"Line Name", value=line['name'], key=f"line_name_{line_idx}")
             
             for point_idx, point in enumerate(line['points']):
@@ -574,14 +935,34 @@ if st.session_state.analysis_complete and st.session_state.analysis_results:
                 st.markdown("### 📋 Detailed Analysis Data")
                 st.dataframe(analysis['dataframe'], use_container_width=True)
                 
-                # Download CSV
-                csv = analysis['dataframe'].to_csv(index=False)
-                st.download_button(
-                    label=f"📥 Download {line['name']} Data (CSV)",
-                    data=csv,
-                    file_name=f"{line['name']}_analysis.csv",
-                    mime="text/csv"
-                )
+                # Download buttons
+                st.markdown("### 📥 Download Reports")
+                col_csv, col_pdf = st.columns(2)
+                
+                with col_csv:
+                    csv = analysis['dataframe'].to_csv(index=False)
+                    st.download_button(
+                        label=f"📊 CSV Data",
+                        data=csv,
+                        file_name=f"{line['name']}_analysis.csv",
+                        mime="text/csv",
+                        use_container_width=True
+                    )
+                
+                with col_pdf:
+                    pdf_path, pdf_filename = generate_professional_pdf(
+                        line['name'], analysis, client_name, project_code,
+                        circle_radius, sample_spacing
+                    )
+                    
+                    with open(pdf_path, "rb") as pdf_file:
+                        st.download_button(
+                            label=f"📘 PDF Report",
+                            data=pdf_file,
+                            file_name=pdf_filename,
+                            mime="application/pdf",
+                            use_container_width=True
+                        )
     
     else:
         # Single line - no tabs needed
@@ -688,14 +1069,34 @@ if st.session_state.analysis_complete and st.session_state.analysis_results:
         st.markdown("### 📋 Detailed Analysis Data")
         st.dataframe(analysis['dataframe'], use_container_width=True)
         
-        # Download CSV
-        csv = analysis['dataframe'].to_csv(index=False)
-        st.download_button(
-            label="📥 Download Data (CSV)",
-            data=csv,
-            file_name="transmission_line_analysis.csv",
-            mime="text/csv"
-        )
+        # Download buttons
+        st.markdown("### 📥 Download Reports")
+        col_csv, col_pdf = st.columns(2)
+        
+        with col_csv:
+            csv = analysis['dataframe'].to_csv(index=False)
+            st.download_button(
+                label="📊 CSV Data",
+                data=csv,
+                file_name="transmission_line_analysis.csv",
+                mime="text/csv",
+                use_container_width=True
+            )
+        
+        with col_pdf:
+            pdf_path, pdf_filename = generate_professional_pdf(
+                line['name'], analysis, client_name, project_code,
+                circle_radius, sample_spacing
+            )
+            
+            with open(pdf_path, "rb") as pdf_file:
+                st.download_button(
+                    label="📘 Professional PDF Report",
+                    data=pdf_file,
+                    file_name=pdf_filename,
+                    mime="application/pdf",
+                    use_container_width=True
+                )
 
 # Footer
 st.markdown("---")
