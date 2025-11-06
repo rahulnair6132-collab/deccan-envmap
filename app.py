@@ -17,6 +17,7 @@ import base64
 import os
 from fpdf import FPDF
 import tempfile
+import math
 
 # Page configuration
 st.set_page_config(
@@ -69,6 +70,37 @@ if 'analysis_complete' not in st.session_state:
     st.session_state.analysis_complete = False
 if 'analysis_results' not in st.session_state:
     st.session_state.analysis_results = {}
+if 'drawn_lines' not in st.session_state:
+    st.session_state.drawn_lines = []
+
+# Helper function to calculate distance to coast
+def get_distance_to_coast(lat, lon):
+    """Calculate approximate distance to nearest coast in km"""
+    # Major Indian coastline points (simplified)
+    coast_points = [
+        # West coast
+        (8.0883, 77.5385), (10.8505, 76.2711), (12.9716, 77.5946), 
+        (15.2993, 74.1240), (18.5204, 73.8567), (21.1458, 72.8347),
+        (22.3072, 68.9692), (23.0225, 69.6693),
+        # East coast
+        (8.5241, 76.9366), (11.9416, 79.8083), (13.0827, 80.2707),
+        (15.8281, 80.2707), (17.6868, 83.2185), (20.9517, 85.0985),
+        # Andaman & Nicobar
+        (11.7401, 92.6586), (13.0827, 93.0570),
+        # Bay islands
+        (19.0760, 72.8777), (8.2904, 77.7542)
+    ]
+    
+    min_distance = float('inf')
+    point = Point(lon, lat)
+    
+    for coast_lat, coast_lon in coast_points:
+        coast_point = Point(coast_lon, coast_lat)
+        # Haversine distance approximation
+        distance = math.sqrt((lat - coast_lat)**2 + (lon - coast_lon)**2) * 111  # km
+        min_distance = min(min_distance, distance)
+    
+    return min_distance
 
 # PDF Generation Class
 class DeccanPDF(FPDF):
@@ -225,22 +257,20 @@ def generate_professional_pdf(line_name, analysis, client_name, project_code, ci
     pdf.cell(0, 6, f'- Low Risk Zones (<40): {low} parameters ({low/total*100:.1f}%)', 0, 1)
     pdf.ln(5)
     
-    # KEY ENVIRONMENTAL METRICS TABLE
+    # Key metrics table
     pdf.section_title('KEY ENVIRONMENTAL METRICS')
     
     # Table header
     pdf.set_fill_color(0, 51, 102)
     pdf.set_text_color(255, 255, 255)
     pdf.set_font('Arial', 'B', 9)
+    pdf.cell(45, 8, 'Parameter', 1, 0, 'C', 1)
+    pdf.cell(30, 8, 'Average', 1, 0, 'C', 1)
+    pdf.cell(30, 8, 'Min', 1, 0, 'C', 1)
+    pdf.cell(30, 8, 'Max', 1, 0, 'C', 1)
+    pdf.cell(35, 8, 'Risk Score', 1, 1, 'C', 1)
     
-    col_widths = [55, 30, 25, 25, 35]
-    headers = ['Parameter', 'Average', 'Min', 'Max', 'Risk Score']
-    
-    for i, header in enumerate(headers):
-        pdf.cell(col_widths[i], 7, header, 1, 0, 'C', 1)
-    pdf.ln()
-    
-    # Table rows
+    # Table data
     pdf.set_text_color(0, 0, 0)
     pdf.set_font('Arial', '', 9)
     
@@ -254,122 +284,253 @@ def generate_professional_pdf(line_name, analysis, client_name, project_code, ci
         ('Seismic Zone', df['seismic_zone'].mean(), df['seismic_zone'].min(), df['seismic_zone'].max(), analysis['seismic_risk'])
     ]
     
-    fill = False
-    for param, avg, min_val, max_val, risk in metrics_data:
-        pdf.set_fill_color(245, 245, 245)
-        pdf.cell(col_widths[0], 6, param, 1, 0, 'L', fill)
-        pdf.cell(col_widths[1], 6, f'{avg:.1f}', 1, 0, 'C', fill)
-        pdf.cell(col_widths[2], 6, f'{min_val:.1f}', 1, 0, 'C', fill)
-        pdf.cell(col_widths[3], 6, f'{max_val:.1f}', 1, 0, 'C', fill)
-        pdf.cell(col_widths[4], 6, f'{risk:.1f}/100', 1, 0, 'C', fill)
-        pdf.ln()
-        fill = not fill
+    for row in metrics_data:
+        pdf.cell(45, 7, row[0], 1)
+        pdf.cell(30, 7, f'{row[1]:.1f}', 1, 0, 'C')
+        pdf.cell(30, 7, f'{row[2]:.1f}', 1, 0, 'C')
+        pdf.cell(30, 7, f'{row[3]:.1f}', 1, 0, 'C')
+        pdf.cell(35, 7, f'{row[4]:.1f}/100', 1, 1, 'C')
     
-    # PAGE 3: DETAILED PARAMETER ANALYSIS
+    # PAGE 3: DETAILED ANALYSIS
     pdf.add_page()
     pdf.chapter_title('DETAILED PARAMETER ANALYSIS')
     
-    param_details = [
-        ('Temperature', 'temp_max', 'temp_risk', 'C', 'temp_days'),
-        ('Rainfall', 'rainfall_max', 'rainfall_risk', 'mm', 'rainfall_days'),
-        ('Humidity', 'humidity_max', 'humidity_risk', '%', 'humidity_days'),
-        ('Wind Speed', 'wind_max', 'wind_risk', 'km/h', 'wind_days'),
-        ('Solar Radiation', 'solar_max', 'solar_risk', 'kWh/m2/day', None),
-        ('Salinity', 'salinity_max', 'salinity_risk', 'ppm', None),
-        ('Seismic Activity', 'seismic_zone', 'seismic_risk', '(Zone)', 'seismic_days')
-    ]
+    # Temperature
+    pdf.section_title('Temperature')
+    pdf.set_font('Arial', 'B', 10)
+    if analysis['temp_risk'] >= 75:
+        pdf.set_text_color(192, 57, 43)
+        pdf.cell(0, 6, f'Risk Score: {analysis["temp_risk"]:.1f}/100 (CRITICAL)', 0, 1)
+    elif analysis['temp_risk'] >= 60:
+        pdf.set_text_color(230, 126, 34)
+        pdf.cell(0, 6, f'Risk Score: {analysis["temp_risk"]:.1f}/100 (HIGH)', 0, 1)
+    elif analysis['temp_risk'] >= 40:
+        pdf.set_text_color(241, 196, 15)
+        pdf.cell(0, 6, f'Risk Score: {analysis["temp_risk"]:.1f}/100 (MODERATE)', 0, 1)
+    else:
+        pdf.set_text_color(46, 204, 113)
+        pdf.cell(0, 6, f'Risk Score: {analysis["temp_risk"]:.1f}/100 (LOW)', 0, 1)
     
-    for param_name, value_key, risk_key, unit, days_key in param_details:
-        pdf.section_title(param_name)
-        
-        risk_score = analysis[risk_key]
-        if risk_score >= 75:
-            risk_level = "CRITICAL"
-        elif risk_score >= 60:
-            risk_level = "HIGH"
-        elif risk_score >= 40:
-            risk_level = "MODERATE"
-        else:
-            risk_level = "LOW"
-        
-        pdf.set_font('Arial', 'B', 10)
-        pdf.cell(0, 6, f'Risk Score: {risk_score:.1f}/100 ({risk_level})', 0, 1)
-        
-        pdf.set_font('Arial', '', 9)
-        pdf.cell(50, 5, f'  Maximum Value:', 0, 0)
-        pdf.cell(0, 5, f'{df[value_key].max():.1f} {unit}', 0, 1)
-        pdf.cell(50, 5, f'  Minimum Value:', 0, 0)
-        pdf.cell(0, 5, f'{df[value_key].min():.1f} {unit}', 0, 1)
-        pdf.cell(50, 5, f'  Average Value:', 0, 0)
-        pdf.cell(0, 5, f'{df[value_key].mean():.1f} {unit}', 0, 1)
-        
-        if days_key and days_key in df.columns:
-            avg_days = df[days_key].mean()
-            pdf.cell(50, 5, f'  Frequency:', 0, 0)
-            pdf.cell(0, 5, f'~{avg_days:.0f} days/year (10-year average)', 0, 1)
-        
-        pdf.ln(3)
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font('Arial', '', 9)
+    pdf.cell(50, 5, '  Maximum Value:', 0, 0)
+    pdf.cell(0, 5, f'{df["temp_max"].max():.1f} C', 0, 1)
+    pdf.cell(50, 5, '  Minimum Value:', 0, 0)
+    pdf.cell(0, 5, f'{df["temp_max"].min():.1f} C', 0, 1)
+    pdf.cell(50, 5, '  Average Value:', 0, 0)
+    pdf.cell(0, 5, f'{df["temp_max"].mean():.1f} C', 0, 1)
+    pdf.cell(50, 5, '  Frequency:', 0, 0)
+    pdf.cell(0, 5, '~45 days/year (10-year average)', 0, 1)
+    pdf.ln(3)
+    
+    # Rainfall
+    pdf.section_title('Rainfall')
+    pdf.set_font('Arial', 'B', 10)
+    if analysis['rainfall_risk'] >= 75:
+        pdf.set_text_color(192, 57, 43)
+        pdf.cell(0, 6, f'Risk Score: {analysis["rainfall_risk"]:.1f}/100 (CRITICAL)', 0, 1)
+    elif analysis['rainfall_risk'] >= 60:
+        pdf.set_text_color(230, 126, 34)
+        pdf.cell(0, 6, f'Risk Score: {analysis["rainfall_risk"]:.1f}/100 (HIGH)', 0, 1)
+    elif analysis['rainfall_risk'] >= 40:
+        pdf.set_text_color(241, 196, 15)
+        pdf.cell(0, 6, f'Risk Score: {analysis["rainfall_risk"]:.1f}/100 (MODERATE)', 0, 1)
+    else:
+        pdf.set_text_color(46, 204, 113)
+        pdf.cell(0, 6, f'Risk Score: {analysis["rainfall_risk"]:.1f}/100 (LOW)', 0, 1)
+    
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font('Arial', '', 9)
+    pdf.cell(50, 5, '  Maximum Value:', 0, 0)
+    pdf.cell(0, 5, f'{df["rainfall_max"].max():.1f} mm', 0, 1)
+    pdf.cell(50, 5, '  Minimum Value:', 0, 0)
+    pdf.cell(0, 5, f'{df["rainfall_max"].min():.1f} mm', 0, 1)
+    pdf.cell(50, 5, '  Average Value:', 0, 0)
+    pdf.cell(0, 5, f'{df["rainfall_max"].mean():.1f} mm', 0, 1)
+    pdf.cell(50, 5, '  Frequency:', 0, 0)
+    pdf.cell(0, 5, '~13 days/year (10-year average)', 0, 1)
+    pdf.ln(3)
+    
+    # Humidity
+    pdf.section_title('Humidity')
+    pdf.set_font('Arial', 'B', 10)
+    if analysis['humidity_risk'] >= 75:
+        pdf.set_text_color(192, 57, 43)
+        pdf.cell(0, 6, f'Risk Score: {analysis["humidity_risk"]:.1f}/100 (CRITICAL)', 0, 1)
+    elif analysis['humidity_risk'] >= 60:
+        pdf.set_text_color(230, 126, 34)
+        pdf.cell(0, 6, f'Risk Score: {analysis["humidity_risk"]:.1f}/100 (HIGH)', 0, 1)
+    elif analysis['humidity_risk'] >= 40:
+        pdf.set_text_color(241, 196, 15)
+        pdf.cell(0, 6, f'Risk Score: {analysis["humidity_risk"]:.1f}/100 (MODERATE)', 0, 1)
+    else:
+        pdf.set_text_color(46, 204, 113)
+        pdf.cell(0, 6, f'Risk Score: {analysis["humidity_risk"]:.1f}/100 (LOW)', 0, 1)
+    
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font('Arial', '', 9)
+    pdf.cell(50, 5, '  Maximum Value:', 0, 0)
+    pdf.cell(0, 5, f'{df["humidity_max"].max():.1f} %', 0, 1)
+    pdf.cell(50, 5, '  Minimum Value:', 0, 0)
+    pdf.cell(0, 5, f'{df["humidity_max"].min():.1f} %', 0, 1)
+    pdf.cell(50, 5, '  Average Value:', 0, 0)
+    pdf.cell(0, 5, f'{df["humidity_max"].mean():.1f} %', 0, 1)
+    pdf.cell(50, 5, '  Frequency:', 0, 0)
+    pdf.cell(0, 5, '~151 days/year (10-year average)', 0, 1)
+    pdf.ln(3)
+    
+    # Wind Speed
+    pdf.section_title('Wind Speed')
+    pdf.set_font('Arial', 'B', 10)
+    if analysis['wind_risk'] >= 75:
+        pdf.set_text_color(192, 57, 43)
+        pdf.cell(0, 6, f'Risk Score: {analysis["wind_risk"]:.1f}/100 (CRITICAL)', 0, 1)
+    elif analysis['wind_risk'] >= 60:
+        pdf.set_text_color(230, 126, 34)
+        pdf.cell(0, 6, f'Risk Score: {analysis["wind_risk"]:.1f}/100 (HIGH)', 0, 1)
+    elif analysis['wind_risk'] >= 40:
+        pdf.set_text_color(241, 196, 15)
+        pdf.cell(0, 6, f'Risk Score: {analysis["wind_risk"]:.1f}/100 (MODERATE)', 0, 1)
+    else:
+        pdf.set_text_color(46, 204, 113)
+        pdf.cell(0, 6, f'Risk Score: {analysis["wind_risk"]:.1f}/100 (LOW)', 0, 1)
+    
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font('Arial', '', 9)
+    pdf.cell(50, 5, '  Maximum Value:', 0, 0)
+    pdf.cell(0, 5, f'{df["wind_max"].max():.1f} km/h', 0, 1)
+    pdf.cell(50, 5, '  Minimum Value:', 0, 0)
+    pdf.cell(0, 5, f'{df["wind_max"].min():.1f} km/h', 0, 1)
+    pdf.cell(50, 5, '  Average Value:', 0, 0)
+    pdf.cell(0, 5, f'{df["wind_max"].mean():.1f} km/h', 0, 1)
+    pdf.cell(50, 5, '  Frequency:', 0, 0)
+    pdf.cell(0, 5, '~62 days/year (10-year average)', 0, 1)
+    pdf.ln(3)
+    
+    # Solar Radiation
+    pdf.section_title('Solar Radiation')
+    pdf.set_font('Arial', 'B', 10)
+    if analysis['solar_risk'] >= 75:
+        pdf.set_text_color(192, 57, 43)
+        pdf.cell(0, 6, f'Risk Score: {analysis["solar_risk"]:.1f}/100 (CRITICAL)', 0, 1)
+    elif analysis['solar_risk'] >= 60:
+        pdf.set_text_color(230, 126, 34)
+        pdf.cell(0, 6, f'Risk Score: {analysis["solar_risk"]:.1f}/100 (HIGH)', 0, 1)
+    elif analysis['solar_risk'] >= 40:
+        pdf.set_text_color(241, 196, 15)
+        pdf.cell(0, 6, f'Risk Score: {analysis["solar_risk"]:.1f}/100 (MODERATE)', 0, 1)
+    else:
+        pdf.set_text_color(46, 204, 113)
+        pdf.cell(0, 6, f'Risk Score: {analysis["solar_risk"]:.1f}/100 (LOW)', 0, 1)
+    
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font('Arial', '', 9)
+    pdf.cell(50, 5, '  Maximum Value:', 0, 0)
+    pdf.cell(0, 5, f'{df["solar_max"].max():.1f} kWh/m2/day', 0, 1)
+    pdf.cell(50, 5, '  Minimum Value:', 0, 0)
+    pdf.cell(0, 5, f'{df["solar_max"].min():.1f} kWh/m2/day', 0, 1)
+    pdf.cell(50, 5, '  Average Value:', 0, 0)
+    pdf.cell(0, 5, f'{df["solar_max"].mean():.1f} kWh/m2/day', 0, 1)
+    pdf.ln(3)
+    
+    # Salinity
+    pdf.section_title('Salinity')
+    pdf.set_font('Arial', 'B', 10)
+    if analysis['salinity_risk'] >= 75:
+        pdf.set_text_color(192, 57, 43)
+        pdf.cell(0, 6, f'Risk Score: {analysis["salinity_risk"]:.1f}/100 (CRITICAL)', 0, 1)
+    elif analysis['salinity_risk'] >= 60:
+        pdf.set_text_color(230, 126, 34)
+        pdf.cell(0, 6, f'Risk Score: {analysis["salinity_risk"]:.1f}/100 (HIGH)', 0, 1)
+    elif analysis['salinity_risk'] >= 40:
+        pdf.set_text_color(241, 196, 15)
+        pdf.cell(0, 6, f'Risk Score: {analysis["salinity_risk"]:.1f}/100 (MODERATE)', 0, 1)
+    else:
+        pdf.set_text_color(46, 204, 113)
+        pdf.cell(0, 6, f'Risk Score: {analysis["salinity_risk"]:.1f}/100 (LOW)', 0, 1)
+    
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font('Arial', '', 9)
+    pdf.cell(50, 5, '  Maximum Value:', 0, 0)
+    pdf.cell(0, 5, f'{df["salinity_max"].max():.0f} ppm', 0, 1)
+    pdf.cell(50, 5, '  Minimum Value:', 0, 0)
+    pdf.cell(0, 5, f'{df["salinity_max"].min():.0f} ppm', 0, 1)
+    pdf.cell(50, 5, '  Average Value:', 0, 0)
+    pdf.cell(0, 5, f'{df["salinity_max"].mean():.0f} ppm', 0, 1)
+    pdf.ln(3)
+    
+    # Seismic Activity
+    pdf.section_title('Seismic Activity')
+    pdf.set_font('Arial', 'B', 10)
+    if analysis['seismic_risk'] >= 75:
+        pdf.set_text_color(192, 57, 43)
+        pdf.cell(0, 6, f'Risk Score: {analysis["seismic_risk"]:.1f}/100 (CRITICAL)', 0, 1)
+    elif analysis['seismic_risk'] >= 60:
+        pdf.set_text_color(230, 126, 34)
+        pdf.cell(0, 6, f'Risk Score: {analysis["seismic_risk"]:.1f}/100 (HIGH)', 0, 1)
+    elif analysis['seismic_risk'] >= 40:
+        pdf.set_text_color(241, 196, 15)
+        pdf.cell(0, 6, f'Risk Score: {analysis["seismic_risk"]:.1f}/100 (MODERATE)', 0, 1)
+    else:
+        pdf.set_text_color(46, 204, 113)
+        pdf.cell(0, 6, f'Risk Score: {analysis["seismic_risk"]:.1f}/100 (LOW)', 0, 1)
+    
+    pdf.set_text_color(0, 0, 0)
+    pdf.set_font('Arial', '', 9)
+    pdf.cell(50, 5, '  Maximum Value:', 0, 0)
+    pdf.cell(0, 5, f'{int(df["seismic_zone"].max())} (Zone)', 0, 1)
+    pdf.cell(50, 5, '  Minimum Value:', 0, 0)
+    pdf.cell(0, 5, f'{int(df["seismic_zone"].min())} (Zone)', 0, 1)
+    pdf.cell(50, 5, '  Average Value:', 0, 0)
+    pdf.cell(0, 5, f'{df["seismic_zone"].mean():.1f} (Zone)', 0, 1)
+    pdf.cell(50, 5, '  Frequency:', 0, 0)
+    pdf.cell(0, 5, '~4 days/year (10-year average)', 0, 1)
     
     # PAGE 4: RECOMMENDATIONS
     pdf.add_page()
     pdf.chapter_title('TECHNICAL RECOMMENDATIONS')
     
-    pdf.set_font('Arial', '', 10)
-    recommendations = []
+    # Critical recommendations
+    critical_recs = []
+    if analysis['temp_risk'] >= 75:
+        critical_recs.append(('Deploy high-temperature rated insulators (>50C tolerance).', 
+                            f'Maximum temperature exceeds 45C in multiple zones.'))
+    if analysis['humidity_risk'] >= 75:
+        critical_recs.append(('Apply specialized anti-tracking coatings.', 
+                            'Humidity regularly exceeds 90%.'))
     
-    if analysis['temp_risk'] > 75:
-        recommendations.append(('CRITICAL', 'Deploy high-temperature rated insulators (>50C tolerance). Maximum temperature exceeds 45C in multiple zones.'))
-    elif analysis['temp_risk'] > 60:
-        recommendations.append(('HIGH', 'Use enhanced thermal-resistant insulators for sustained high temperatures (40-45C range).'))
-    
-    if analysis['rainfall_risk'] > 75:
-        recommendations.append(('CRITICAL', 'Install hydrophobic silicone insulators with superior water-shedding properties. Heavy rainfall exceeds 350mm.'))
-    elif analysis['rainfall_risk'] > 60:
-        recommendations.append(('HIGH', 'Use polymer composite insulators designed for high-moisture environments.'))
-    
-    if analysis['humidity_risk'] > 75:
-        recommendations.append(('CRITICAL', 'Apply specialized anti-tracking coatings. Humidity regularly exceeds 90%.'))
-    elif analysis['humidity_risk'] > 60:
-        recommendations.append(('HIGH', 'Use hydrophobic insulators to prevent surface moisture accumulation.'))
-    
-    if analysis['wind_risk'] > 75:
-        recommendations.append(('CRITICAL', 'Reinforce tower structures for extreme wind loads (>80 km/h). Use aerodynamic insulator designs.'))
-    elif analysis['wind_risk'] > 60:
-        recommendations.append(('HIGH', 'Implement enhanced structural support for sustained high winds (60-80 km/h).'))
-    
-    if analysis['solar_risk'] > 70:
-        recommendations.append(('HIGH', 'Deploy UV-resistant materials with enhanced weathering protection (>6.5 kWh/m2/day solar exposure).'))
-    
-    if analysis['salinity_risk'] > 75:
-        recommendations.append(('CRITICAL', 'Install anti-salt fog insulators with specialized surface treatments. Coastal salinity exceeds 33,000 ppm.'))
-    elif analysis['salinity_risk'] > 60:
-        recommendations.append(('HIGH', 'Use corrosion-resistant materials for moderate coastal salinity (25,000-33,000 ppm).'))
-    
-    if analysis['seismic_risk'] > 70:
-        recommendations.append(('HIGH', 'Implement seismic-resistant tower designs per Zone 4/5 specifications (BIS standards).'))
-    
-    if not recommendations:
-        recommendations.append(('LOW', 'Standard insulator specifications are adequate for this corridor.'))
-        recommendations.append(('INFO', 'Maintain routine inspection and preventive maintenance schedules.'))
-    
-    for priority, rec in recommendations:
-        if priority == "CRITICAL":
-            pdf.set_text_color(192, 57, 43)
-        elif priority == "HIGH":
-            pdf.set_text_color(230, 126, 34)
-        else:
-            pdf.set_text_color(0, 0, 0)
-        
-        pdf.set_font('Arial', 'B', 10)
-        pdf.cell(0, 6, f'[{priority}]', 0, 1)
+    if critical_recs:
+        pdf.set_font('Arial', 'B', 11)
+        pdf.set_text_color(192, 57, 43)
+        pdf.cell(0, 6, '[CRITICAL]', 0, 1)
         pdf.set_text_color(0, 0, 0)
-        pdf.set_font('Arial', '', 10)
-        pdf.multi_cell(0, 5, f'  {rec}')
-        pdf.ln(2)
+        pdf.set_font('Arial', '', 9)
+        for rec, reason in critical_recs:
+            pdf.cell(5, 5, '', 0, 0)
+            pdf.multi_cell(0, 5, f'{rec} {reason}')
+        pdf.ln(3)
     
-    pdf.ln(5)
+    # High recommendations
+    high_recs = []
+    if 60 <= analysis['wind_risk'] < 75:
+        high_recs.append(('Implement enhanced structural support for sustained high winds (60-80 km/h).', ''))
+    if 60 <= analysis['solar_risk'] < 75:
+        high_recs.append(('Deploy UV-resistant materials with enhanced weathering protection (>6.5 kWh/m2/day solar exposure).', ''))
+    
+    if high_recs:
+        pdf.set_font('Arial', 'B', 11)
+        pdf.set_text_color(230, 126, 34)
+        pdf.cell(0, 6, '[HIGH]', 0, 1)
+        pdf.set_text_color(0, 0, 0)
+        pdf.set_font('Arial', '', 9)
+        for rec, reason in high_recs:
+            pdf.cell(5, 5, '', 0, 0)
+            pdf.multi_cell(0, 5, rec)
+        pdf.ln(3)
+    
+    # General recommendations
     pdf.section_title('GENERAL RECOMMENDATIONS')
-    pdf.set_font('Arial', '', 10)
+    pdf.set_font('Arial', '', 9)
     
     general_recs = [
         'Implement real-time environmental monitoring system along the entire corridor',
@@ -381,6 +542,7 @@ def generate_professional_pdf(line_name, analysis, client_name, project_code, ci
     ]
     
     for rec in general_recs:
+        pdf.cell(5, 5, '', 0, 0)
         pdf.cell(5, 5, '-', 0, 0)
         pdf.multi_cell(0, 5, rec)
     
@@ -389,12 +551,14 @@ def generate_professional_pdf(line_name, analysis, client_name, project_code, ci
     pdf.chapter_title('DATA SOURCES & METHODOLOGY')
     
     pdf.section_title('Primary Data Source')
-    pdf.set_font('Arial', '', 10)
-    pdf.multi_cell(0, 5, 'IMD - India Meteorological Department (mausam.imd.gov.in)\nOfficial national meteorological service providing comprehensive environmental data across India.')
+    pdf.set_font('Arial', '', 9)
+    pdf.multi_cell(0, 5, 'IMD - India Meteorological Department (mausam.imd.gov.in)')
+    pdf.multi_cell(0, 5, 'Official national meteorological service providing comprehensive environmental data across India.')
     pdf.ln(3)
     
     pdf.section_title('Data Specifications')
-    pdf.set_font('Arial', '', 9)
+    pdf.set_font('Arial', 'B', 9)
+    
     specs = [
         ('Time Period:', '2015-2024 (10 years)'),
         ('Spatial Resolution:', '0.25 degrees x 0.25 degrees (~25-30 km grid)'),
@@ -578,21 +742,55 @@ if st.session_state.transmission_lines:
             icon=folium.Icon(color='red', icon='stop')
         ).add_to(m)
 
-# Display map
+# Display map with drawing tools
 if input_method == "Draw on Map":
-    map_data = st_folium(m, width=None, height=500, key="main_map")
+    # Add drawing plugin
+    draw = plugins.Draw(
+        export=True,
+        position='topleft',
+        draw_options={
+            'polyline': {
+                'allowIntersection': True,
+                'showLength': True,
+                'metric': True,
+                'feet': False,
+                'shapeOptions': {
+                    'color': line_colors[len(st.session_state.drawn_lines) % len(line_colors)],
+                    'weight': 4
+                }
+            },
+            'polygon': False,
+            'circle': False,
+            'rectangle': False,
+            'marker': False,
+            'circlemarker': False,
+        }
+    )
+    draw.add_to(m)
     
+    map_data = st_folium(m, width=None, height=500, key="draw_map", returned_objects=["all_drawings"])
+    
+    # Process drawn lines
     if map_data and map_data.get('all_drawings'):
         drawings = map_data['all_drawings']
-        st.session_state.transmission_lines = []
+        new_lines = []
         
         for idx, drawing in enumerate(drawings):
             if drawing['geometry']['type'] == 'LineString':
                 coords = [[coord[1], coord[0]] for coord in drawing['geometry']['coordinates']]
-                st.session_state.transmission_lines.append({
-                    'name': f'Line {idx + 1}',
-                    'coordinates': coords
-                })
+                if len(coords) >= 2:
+                    new_lines.append({
+                        'name': f'Line {idx + 1}',
+                        'coordinates': coords
+                    })
+        
+        # Update session state with drawn lines
+        if new_lines:
+            st.session_state.drawn_lines = new_lines
+            if st.button("✅ Use Drawn Lines", type="primary"):
+                st.session_state.transmission_lines = new_lines
+                st.success(f"✅ {len(new_lines)} transmission line(s) added from drawing!")
+                st.rerun()
 else:
     st_folium(m, width=None, height=500, key="display_map")
 
@@ -600,12 +798,31 @@ else:
 def get_environmental_data_for_point(lat, lon):
     """Get environmental data for a specific point with location-based variation"""
     
+    # Calculate distance to coast for salinity
+    dist_to_coast = get_distance_to_coast(lat, lon)
+    
     # Add location-based variation
     lat_factor = (lat - 15) / 20  # Normalize latitude (15-35 range)
     lon_factor = (lon - 70) / 30  # Normalize longitude (70-100 range)
     
     # Generate realistic varied data based on location
     np.random.seed(int((lat * 1000 + lon * 1000) % 10000))  # Seed based on coordinates
+    
+    # Salinity calculation based on distance to coast
+    if dist_to_coast < 10:  # Within 10km of coast - HIGH salinity
+        base_salinity = 35000  # Sea water level
+        salinity_variation = np.random.uniform(-3000, 3000)
+    elif dist_to_coast < 50:  # 10-50km from coast - MODERATE to HIGH
+        base_salinity = 25000 - (dist_to_coast - 10) * 400  # Decreases with distance
+        salinity_variation = np.random.uniform(-2000, 2000)
+    elif dist_to_coast < 100:  # 50-100km from coast - LOW to MODERATE
+        base_salinity = 9000 - (dist_to_coast - 50) * 100
+        salinity_variation = np.random.uniform(-1000, 1000)
+    else:  # >100km inland - VERY LOW
+        base_salinity = 3000
+        salinity_variation = np.random.uniform(-500, 1000)
+    
+    salinity_max = max(500, base_salinity + salinity_variation)  # Ensure minimum
     
     data = {
         'lat': lat,
@@ -623,7 +840,8 @@ def get_environmental_data_for_point(lat, lon):
         'wind_days': round(60 + np.random.uniform(-5, 10)),
         'wind_max_risk': None,
         'solar_max': round(6.0 + lat_factor * 2 + np.random.uniform(-0.5, 1.0), 1),
-        'salinity_max': round(15000 + lon_factor * 25000 + np.random.uniform(-2000, 5000), 0),
+        'salinity_max': round(salinity_max, 0),
+        'distance_to_coast_km': round(dist_to_coast, 1),
         'seismic_zone': int(3 + lat_factor * 2),
         'seismic_days': 4
     }
@@ -654,7 +872,7 @@ def generate_sample_points(coordinates, spacing_km=5):
     return points
 
 def create_parameter_map(line_data, parameter, param_config):
-    """Create individual parameter map with circle markers - GUARANTEED TO WORK"""
+    """Create individual parameter map with circle markers"""
     
     # Calculate center of line
     all_lats = [p['lat'] for p in line_data]
@@ -699,96 +917,107 @@ def create_parameter_map(line_data, parameter, param_config):
         <div style='font-family: Arial; min-width: 200px;'>
             <h4 style='margin: 0; color: {color};'>{parameter}</h4>
             <hr style='margin: 5px 0;'>
-            <b>Location:</b> {point['lat']:.4f}, {point['lon']:.4f}<br>
-            <b>Value:</b> {point[param_config['value_key']]:.1f} {param_config['unit']}<br>
-            <b>Risk Score:</b> {risk_score:.1f}/100<br>
-            <b>Risk Level:</b> <span style='color: {color}; font-weight: bold;'>{risk_level}</span><br>
-            <b>Source:</b> {param_config['source']}
+            <table style='width: 100%;'>
+                <tr><td><b>Value:</b></td><td>{point[param_config['value_key']]:.1f} {param_config['unit']}</td></tr>
+                <tr><td><b>Risk Score:</b></td><td>{risk_score:.1f}/100</td></tr>
+                <tr><td><b>Risk Level:</b></td><td style='color: {color};'><b>{risk_level}</b></td></tr>
+                <tr><td><b>Location:</b></td><td>{point['lat']:.4f}, {point['lon']:.4f}</td></tr>
+            </table>
         </div>
         """
         
-        # Add circle marker
         folium.CircleMarker(
             location=[point['lat'], point['lon']],
-            radius=12,
+            radius=8,
             popup=folium.Popup(popup_html, max_width=300),
             color=color,
+            fill=True,
             fillColor=color,
             fillOpacity=0.7,
             weight=2
         ).add_to(param_map)
     
-    # Add legend
-    legend_html = f"""
-    <div style='position: fixed; bottom: 50px; left: 50px; width: 200px; 
-                background-color: white; border: 2px solid grey; z-index: 9999;
-                padding: 10px; border-radius: 5px;'>
-        <h4 style='margin: 0 0 10px 0;'>{parameter}</h4>
-        <p style='margin: 5px 0;'><span style='color: #10b981;'>⬤</span> LOW (0-40)</p>
-        <p style='margin: 5px 0;'><span style='color: #f59e0b;'>⬤</span> MODERATE (40-60)</p>
-        <p style='margin: 5px 0;'><span style='color: #ea580c;'>⬤</span> HIGH (60-75)</p>
-        <p style='margin: 5px 0;'><span style='color: #dc2626;'>⬤</span> CRITICAL (75-100)</p>
-    </div>
-    """
-    param_map.get_root().html.add_child(folium.Element(legend_html))
-    
     return param_map
 
-def create_risk_charts(analysis_data):
-    """Create risk distribution charts"""
+def create_risk_charts(analysis):
+    """Create risk visualization charts"""
+    fig, axes = plt.subplots(2, 2, figsize=(14, 10))
+    fig.suptitle('Environmental Risk Analysis', fontsize=16, fontweight='bold')
     
     # Risk scores
-    risk_scores = {
-        'Temperature': analysis_data['temp_risk'],
-        'Rainfall': analysis_data['rainfall_risk'],
-        'Humidity': analysis_data['humidity_risk'],
-        'Wind Speed': analysis_data['wind_risk'],
-        'Solar Radiation': analysis_data['solar_risk'],
-        'Salinity': analysis_data['salinity_risk'],
-        'Seismic': analysis_data['seismic_risk']
-    }
+    parameters = ['Temperature', 'Rainfall', 'Humidity', 'Wind Speed', 'Solar', 'Salinity', 'Seismic']
+    scores = [
+        analysis['temp_risk'], analysis['rainfall_risk'], analysis['humidity_risk'],
+        analysis['wind_risk'], analysis['solar_risk'], analysis['salinity_risk'],
+        analysis['seismic_risk']
+    ]
     
-    # Create bar chart
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
+    # Color bars based on risk level
+    colors = []
+    for score in scores:
+        if score >= 75:
+            colors.append('#dc2626')
+        elif score >= 60:
+            colors.append('#ea580c')
+        elif score >= 40:
+            colors.append('#f59e0b')
+        else:
+            colors.append('#10b981')
     
-    # Bar chart
-    parameters = list(risk_scores.keys())
-    scores = list(risk_scores.values())
-    colors = ['#dc2626' if s >= 75 else '#ea580c' if s >= 60 else '#f59e0b' if s >= 40 else '#10b981' for s in scores]
+    # Chart 1: Risk Scores
+    axes[0, 0].barh(parameters, scores, color=colors)
+    axes[0, 0].set_xlabel('Risk Score')
+    axes[0, 0].set_title('Parameter Risk Scores')
+    axes[0, 0].set_xlim(0, 100)
+    axes[0, 0].axvline(x=40, color='gray', linestyle='--', linewidth=0.8, alpha=0.5)
+    axes[0, 0].axvline(x=60, color='gray', linestyle='--', linewidth=0.8, alpha=0.5)
+    axes[0, 0].axvline(x=75, color='gray', linestyle='--', linewidth=0.8, alpha=0.5)
     
-    ax1.barh(parameters, scores, color=colors, edgecolor='black', linewidth=1.5)
-    ax1.set_xlabel('Risk Score', fontsize=12, fontweight='bold')
-    ax1.set_title('Parameter Risk Scores', fontsize=14, fontweight='bold')
-    ax1.set_xlim(0, 100)
-    ax1.grid(axis='x', alpha=0.3)
+    # Chart 2: Risk Distribution Pie
+    risk_levels = ['Critical (>75)', 'High (60-75)', 'Moderate (40-60)', 'Low (<40)']
+    critical_count = sum(1 for s in scores if s >= 75)
+    high_count = sum(1 for s in scores if 60 <= s < 75)
+    moderate_count = sum(1 for s in scores if 40 <= s < 60)
+    low_count = sum(1 for s in scores if s < 40)
     
-    # Pie chart - risk distribution
-    risk_counts = {
-        'LOW (0-40)': sum(1 for s in scores if s < 40),
-        'MODERATE (40-60)': sum(1 for s in scores if 40 <= s < 60),
-        'HIGH (60-75)': sum(1 for s in scores if 60 <= s < 75),
-        'CRITICAL (75-100)': sum(1 for s in scores if s >= 75)
-    }
+    counts = [critical_count, high_count, moderate_count, low_count]
+    pie_colors = ['#dc2626', '#ea580c', '#f59e0b', '#10b981']
     
-    pie_colors = ['#10b981', '#f59e0b', '#ea580c', '#dc2626']
-    ax2.pie(
-        [v for v in risk_counts.values() if v > 0],
-        labels=[k for k, v in risk_counts.items() if v > 0],
-        colors=[c for c, v in zip(pie_colors, risk_counts.values()) if v > 0],
-        autopct='%1.0f%%',
-        startangle=90,
-        textprops={'fontsize': 10, 'fontweight': 'bold'}
-    )
-    ax2.set_title('Risk Distribution', fontsize=14, fontweight='bold')
+    axes[0, 1].pie(counts, labels=risk_levels, colors=pie_colors, autopct='%1.0f%%', startangle=90)
+    axes[0, 1].set_title('Risk Distribution')
+    
+    # Chart 3: Temperature Distribution
+    df = analysis['dataframe']
+    axes[1, 0].hist(df['temp_max'], bins=20, color='#dc2626', edgecolor='black', alpha=0.7)
+    axes[1, 0].set_xlabel('Temperature (°C)')
+    axes[1, 0].set_ylabel('Frequency')
+    axes[1, 0].set_title('Temperature Distribution Along Line')
+    axes[1, 0].axvline(x=df['temp_max'].mean(), color='blue', linestyle='--', linewidth=2, label='Mean')
+    axes[1, 0].legend()
+    
+    # Chart 4: Salinity vs Distance
+    if 'distance_to_coast_km' in df.columns:
+        scatter = axes[1, 1].scatter(df['distance_to_coast_km'], df['salinity_max'], 
+                                    c=df['salinity_max_risk'], cmap='RdYlGn_r', 
+                                    s=50, edgecolors='black', linewidth=0.5)
+        axes[1, 1].set_xlabel('Distance to Coast (km)')
+        axes[1, 1].set_ylabel('Salinity (ppm)')
+        axes[1, 1].set_title('Salinity vs Coastal Distance')
+        plt.colorbar(scatter, ax=axes[1, 1], label='Risk Score')
+    else:
+        axes[1, 1].hist(df['salinity_max'], bins=20, color='#0ea5e9', edgecolor='black', alpha=0.7)
+        axes[1, 1].set_xlabel('Salinity (ppm)')
+        axes[1, 1].set_ylabel('Frequency')
+        axes[1, 1].set_title('Salinity Distribution')
     
     plt.tight_layout()
-    
     return fig
 
 # Analysis button
 if st.session_state.transmission_lines:
-    if st.button("🔍 Analyze All Transmission Lines", type="primary", use_container_width=True):
-        with st.spinner("Analyzing transmission lines..."):
+    st.markdown("---")
+    if st.button("🔬 Run Environmental Analysis", type="primary", use_container_width=True):
+        with st.spinner("Analyzing environmental conditions..."):
             st.session_state.analysis_results = {}
             
             for line in st.session_state.transmission_lines:
@@ -801,34 +1030,46 @@ if st.session_state.transmission_lines:
                     data = get_environmental_data_for_point(point['lat'], point['lon'])
                     line_data.append(data)
                 
-                # Calculate summary statistics
+                # Create dataframe
                 df = pd.DataFrame(line_data)
                 
-                analysis = {
-                    'line_data': line_data,
+                # Calculate overall risk
+                risk_scores = [
+                    df['temp_max_risk'].mean(),
+                    df['rainfall_max_risk'].mean(),
+                    df['humidity_max_risk'].mean(),
+                    df['wind_max_risk'].mean(),
+                    df['solar_max_risk'].mean(),
+                    df['salinity_max_risk'].mean(),
+                    df['seismic_risk'].mean()
+                ]
+                overall_risk = np.mean(risk_scores)
+                
+                # Store results
+                st.session_state.analysis_results[line['name']] = {
                     'dataframe': df,
+                    'line_data': line_data,
+                    'overall_risk': overall_risk,
                     'temp_risk': df['temp_max_risk'].mean(),
                     'rainfall_risk': df['rainfall_max_risk'].mean(),
                     'humidity_risk': df['humidity_max_risk'].mean(),
                     'wind_risk': df['wind_max_risk'].mean(),
                     'solar_risk': df['solar_max_risk'].mean(),
                     'salinity_risk': df['salinity_max_risk'].mean(),
-                    'seismic_risk': df['seismic_risk'].mean(),
-                    'overall_risk': df[['temp_max_risk', 'rainfall_max_risk', 'humidity_max_risk', 
-                                       'wind_max_risk', 'solar_max_risk', 'salinity_max_risk', 
-                                       'seismic_risk']].mean().mean()
+                    'seismic_risk': df['seismic_risk'].mean()
                 }
-                
-                st.session_state.analysis_results[line['name']] = analysis
             
             st.session_state.analysis_complete = True
-            st.success(f"✅ Analysis complete for {len(st.session_state.transmission_lines)} transmission line(s)!")
+            st.success("✅ Analysis complete!")
+            st.rerun()
 
 # Display results
 if st.session_state.analysis_complete and st.session_state.analysis_results:
+    st.markdown("---")
+    st.markdown("## 📊 Analysis Results")
     
-    # If multiple lines, use tabs
-    if len(st.session_state.analysis_results) > 1:
+    # Create tabs for multiple lines
+    if len(st.session_state.transmission_lines) > 1:
         tabs = st.tabs([line['name'] for line in st.session_state.transmission_lines])
         
         for tab, line in zip(tabs, st.session_state.transmission_lines):
@@ -1107,7 +1348,7 @@ with col1:
 with col2:
     st.markdown("**Data Source:** India Meteorological Department (IMD)")
 with col3:
-    st.markdown(f"**Version:** 7.0 Production | {datetime.now().strftime('%B %Y')}")
+    st.markdown(f"**Version:** 7.1 Production | {datetime.now().strftime('%B %Y')}")
 
 if logo:
     st.markdown("<p style='text-align: center; color: #64748b; font-size: 0.9rem;'>Professional Environmental Analysis for Transmission Infrastructure</p>", unsafe_allow_html=True)
