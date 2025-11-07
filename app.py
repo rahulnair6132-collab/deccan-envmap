@@ -637,22 +637,56 @@ else:
 
 # Helper function to calculate distance to coast
 def get_distance_to_coast(lat, lon):
-    """Calculate approximate distance to nearest Indian coast in km"""
-    # Comprehensive Indian coastline points
+    """Calculate approximate distance to nearest Indian coast in km - COMPREHENSIVE VERSION"""
+    # MASSIVELY EXPANDED coastal points - especially Gujarat Gulf of Khambhat/Kutch
     coast_points = [
-        # West coast (Arabian Sea)
-        (8.0883, 77.5385), (9.9312, 76.2673), (11.2588, 75.7804), (12.9716, 74.8056),
-        (14.8546, 74.1240), (15.4909, 73.8278), (17.0005, 73.0167), (18.9388, 72.8354),
-        (20.2961, 72.8347), (21.7051, 72.9959), (22.3072, 68.9692), (23.0225, 69.6693),
-        # East coast (Bay of Bengal)
-        (8.0883, 77.5569), (10.7905, 79.8437), (11.9416, 79.8083), (13.0827, 80.2707),
-        (14.4426, 79.9865), (15.9129, 80.3328), (16.9891, 82.2475), (17.6868, 83.2185),
-        (18.9894, 84.6667), (19.8135, 85.8312), (20.2644, 85.8281), (21.8064, 87.0936),
-        (22.5726, 88.3639),
-        # Andaman & Nicobar
-        (11.7401, 92.6586), (13.0827, 93.0570),
-        # Gujarat peninsula
-        (20.9517, 70.3660), (22.4707, 69.6293),
+        # GUJARAT COAST - CRITICAL EXPANSION (Gulf of Khambhat & Kutch)
+        (23.0225, 69.6693), (22.8, 69.8), (22.5, 70.0), (22.3072, 68.9692),
+        (22.4707, 69.6293), (22.2, 70.2), (22.0, 70.4), (21.8, 70.6),
+        (21.6, 70.8), (21.5, 71.0), (21.4, 71.2), (21.3, 71.4),
+        (21.2, 71.6), (21.1, 71.8), (21.0, 72.0), (20.9, 72.2),
+        (21.7051, 72.9959), (21.5, 72.8), (21.3, 72.6), (21.1, 72.4),
+        (20.9517, 70.3660), (20.8, 70.5), (20.7, 70.7),
+        (22.8, 70.1), (22.6, 70.3), (22.4, 70.5), (22.2, 70.7),
+        
+        # West coast (Arabian Sea) - Kerala to Maharashtra
+        (8.0883, 77.5385), (8.5, 77.3), (9.0, 77.0), (9.5, 76.8),
+        (9.9312, 76.2673), (10.5, 76.0), (11.0, 75.8),
+        (11.2588, 75.7804), (11.8, 75.5), (12.3, 75.2),
+        (12.9716, 74.8056), (13.5, 74.5), (14.0, 74.3),
+        (14.8546, 74.1240), (15.2, 74.0), (15.4909, 73.8278),
+        (16.0, 73.6), (16.5, 73.4), (17.0005, 73.0167),
+        (17.5, 73.0), (18.0, 72.9), (18.5, 72.85),
+        (18.9388, 72.8354), (19.5, 72.8), (20.0, 72.8),
+        (20.2961, 72.8347), (20.5, 72.8), (20.7, 72.9),
+        
+        # Mumbai to Surat coast
+        (19.0, 72.8), (19.5, 72.8), (20.0, 72.8), (20.5, 72.8),
+        (21.0, 72.8), (21.1702, 72.8311), (21.3, 72.85), (21.5, 72.9),
+        
+        # East coast (Bay of Bengal) - Tamil Nadu to West Bengal
+        (8.0883, 77.5569), (8.5, 78.0), (9.0, 78.5), (9.5, 79.0),
+        (10.0, 79.5), (10.7905, 79.8437), (11.4, 79.8),
+        (11.9416, 79.8083), (12.5, 80.0), (13.0827, 80.2707),
+        (13.6, 80.2), (14.1, 80.0), (14.4426, 79.9865),
+        (15.0, 80.1), (15.5, 80.2), (15.9129, 80.3328),
+        (16.4, 81.0), (16.9891, 82.2475), (17.3, 82.5),
+        (17.6868, 83.2185), (18.2, 83.8), (18.7, 84.2),
+        (18.9894, 84.6667), (19.3, 85.0), (19.8135, 85.8312),
+        (20.0, 85.8), (20.2644, 85.8281), (20.7, 86.5),
+        (21.2, 87.0), (21.8064, 87.0936), (22.2, 87.8),
+        (22.5726, 88.3639), (22.7, 88.5), (22.9, 88.7),
+        
+        # Andaman & Nicobar - dense coverage
+        (11.7401, 92.6586), (12.0, 92.8), (12.5, 93.0),
+        (13.0827, 93.0570), (13.5, 93.2), (14.0, 93.0),
+        
+        # Lakshadweep islands
+        (10.5, 72.5), (11.0, 72.7), (11.5, 72.6),
+        
+        # Odisha coast details
+        (19.8, 85.8), (20.0, 85.9), (20.2, 86.0), (20.4, 86.2),
+        (20.6, 86.5), (20.8, 86.8), (21.0, 87.0), (21.3, 87.3),
     ]
     
     min_distance = float('inf')
@@ -702,71 +736,98 @@ def get_pollution_level(lat, lon):
     return max(35, min(500, final_aqi))
 
 def get_environmental_data_for_point(lat, lon):
-    """Get environmental data with FIXED salinity and NEW pollution parameter"""
+    """Get environmental data with ULTRA-AGGRESSIVE salinity for Gujarat coast"""
     
     # Calculate distance to coast for salinity
     dist_to_coast = get_distance_to_coast(lat, lon)
     
     # Add location-based variation
-    lat_factor = (lat - 15) / 20  # Normalize latitude (15-35 range)
-    lon_factor = (lon - 70) / 30  # Normalize longitude (70-100 range)
+    lat_factor = (lat - 15) / 20
+    lon_factor = (lon - 70) / 30
     
     # Generate realistic varied data based on location
-    np.random.seed(int((lat * 1000 + lon * 1000) % 10000))  # Seed based on coordinates
+    np.random.seed(int((lat * 1000 + lon * 1000) % 10000))
     
-    # CRITICAL FIX: Salinity based on actual oceanographic data
-    # Arabian Sea: ~37 psu (37,000 ppm), Bay of Bengal: ~32 psu (32,000 ppm)
-    if dist_to_coast < 0.5:  # ON THE SEA/OCEAN
-        if lon < 80:  # Arabian Sea side
+    # ULTRA-AGGRESSIVE SALINITY - MUCH WIDER INFLUENCE ZONES
+    # Gujarat coast (68-74 lon, 20-23 lat) is EXTREMELY SALINE
+    is_gujarat_coast = (68 <= lon <= 74 and 20 <= lat <= 24)
+    
+    if dist_to_coast < 2:  # ON THE SEA/OCEAN - EXPANDED from 0.5km
+        if lon < 80:  # Arabian Sea
             base_salinity = 37000
-        else:  # Bay of Bengal side
+        else:  # Bay of Bengal
             base_salinity = 32000
+        salinity_max = base_salinity + np.random.uniform(-500, 500)
+    
+    elif dist_to_coast < 25:  # 0-25km - CRITICAL COASTAL - EXPANDED
+        if lon < 80:
+            base_salinity = 36000
+        else:
+            base_salinity = 31000
         salinity_max = base_salinity + np.random.uniform(-1000, 1000)
-    elif dist_to_coast < 5:  # 0-5km - COASTAL ZONE - VERY HIGH
-        if lon < 80:
-            base_salinity = 35000
+    
+    elif dist_to_coast < 75:  # 25-75km - HIGH COASTAL - NEW ZONE
+        if is_gujarat_coast:  # Gujarat stays HIGH
+            base_salinity = 32000
+        elif lon < 80:
+            base_salinity = 30000 - ((dist_to_coast - 25) / 50 * 10000)
         else:
-            base_salinity = 30000
-        salinity_max = base_salinity + np.random.uniform(-2000, 2000)
-    elif dist_to_coast < 25:  # 5-25km - CRITICAL COASTAL - HIGH
-        decay_factor = (dist_to_coast - 5) / 20
-        if lon < 80:
-            base_salinity = 35000 - (decay_factor * 20000)
-        else:
-            base_salinity = 30000 - (decay_factor * 18000)
+            base_salinity = 26000 - ((dist_to_coast - 25) / 50 * 8000)
         salinity_max = base_salinity + np.random.uniform(-1500, 1500)
-    elif dist_to_coast < 100:  # 25-100km - MODERATE
-        decay_factor = (dist_to_coast - 25) / 75
-        base_salinity = 15000 - (decay_factor * 10000)
+    
+    elif dist_to_coast < 150:  # 75-150km - MODERATE - EXPANDED
+        if is_gujarat_coast:  # Gujarat still elevated
+            base_salinity = 25000
+        else:
+            decay_factor = (dist_to_coast - 75) / 75
+            base_salinity = 20000 - (decay_factor * 12000)
+        salinity_max = base_salinity + np.random.uniform(-2000, 2000)
+    
+    elif dist_to_coast < 250:  # 150-250km - LOW-MODERATE - NEW ZONE
+        decay_factor = (dist_to_coast - 150) / 100
+        base_salinity = 8000 - (decay_factor * 4000)
         salinity_max = base_salinity + np.random.uniform(-1000, 1000)
-    else:  # >100km - LOW
-        base_salinity = 3000
+    
+    else:  # >250km - LOW
+        base_salinity = 3500
         salinity_max = base_salinity + np.random.uniform(-500, 1000)
     
-    salinity_max = max(500, salinity_max)  # Minimum bound
+    salinity_max = max(1000, salinity_max)
     
-    # NEW: Pollution parameter based on AQI research
+    # Pollution parameter
     pollution_aqi = get_pollution_level(lat, lon)
+    
+    # BOOSTED VALUES FOR GUJARAT COAST
+    if is_gujarat_coast:
+        temp_boost = 3  # Hotter
+        humidity_boost = 8  # More humid
+        solar_boost = 0.5  # More solar
+        pollution_boost = 20  # More polluted (industrial)
+    else:
+        temp_boost = 0
+        humidity_boost = 0
+        solar_boost = 0
+        pollution_boost = 0
     
     data = {
         'lat': lat,
         'lon': lon,
-        'temp_max': round(35 + lat_factor * 15 + np.random.uniform(-3, 3), 1),
+        'temp_max': round(35 + lat_factor * 15 + np.random.uniform(-3, 3) + temp_boost, 1),
         'temp_days': 45,
         'temp_max_risk': None,
         'rainfall_max': round(800 + lon_factor * 600 + np.random.uniform(-100, 200), 1),
         'rainfall_days': round(12 + np.random.uniform(-3, 5)),
         'rainfall_max_risk': None,
-        'humidity_max': round(70 + lon_factor * 20 + np.random.uniform(-5, 10), 1),
+        'humidity_max': round(70 + lon_factor * 20 + np.random.uniform(-5, 10) + humidity_boost, 1),
         'humidity_days': round(145 + np.random.uniform(-10, 20)),
         'humidity_max_risk': None,
         'wind_max': round(55 + lat_factor * 20 + np.random.uniform(-5, 15), 1),
         'wind_days': round(60 + np.random.uniform(-5, 10)),
         'wind_max_risk': None,
-        'solar_max': round(6.0 + lat_factor * 2 + np.random.uniform(-0.5, 1.0), 1),
+        'solar_max': round(6.0 + lat_factor * 2 + np.random.uniform(-0.5, 1.0) + solar_boost, 1),
         'salinity_max': round(salinity_max, 0),
         'distance_to_coast_km': round(dist_to_coast, 1),
-        'pollution_aqi': round(pollution_aqi, 1),
+        'pollution_aqi': round(pollution_aqi + pollution_boost, 1),
         'seismic_zone': int(3 + lat_factor * 2),
         'seismic_days': 4
     }
@@ -889,6 +950,7 @@ def create_risk_charts(analysis_data):
         'Wind Speed': analysis_data['wind_risk'],
         'Solar Radiation': analysis_data['solar_risk'],
         'Salinity': analysis_data['salinity_risk'],
+        'Pollution': analysis_data['pollution_risk'],
         'Seismic': analysis_data['seismic_risk']
     }
     
@@ -957,10 +1019,11 @@ if st.session_state.transmission_lines:
                     'wind_risk': df['wind_max_risk'].mean(),
                     'solar_risk': df['solar_max_risk'].mean(),
                     'salinity_risk': df['salinity_max_risk'].mean(),
+                    'pollution_risk': df['pollution_risk'].mean(),
                     'seismic_risk': df['seismic_risk'].mean(),
                     'overall_risk': df[['temp_max_risk', 'rainfall_max_risk', 'humidity_max_risk', 
                                        'wind_max_risk', 'solar_max_risk', 'salinity_max_risk', 
-                                       'seismic_risk']].mean().mean()
+                                       'pollution_risk', 'seismic_risk']].mean().mean()
                 }
                 
                 st.session_state.analysis_results[line['name']] = analysis
@@ -1058,6 +1121,13 @@ if st.session_state.analysis_complete and st.session_state.analysis_results:
                         'unit': 'ppm',
                         'source': 'Coastal Monitoring',
                         'icon': '🌊'
+                    },
+                    'Pollution (AQI)': {
+                        'value_key': 'pollution_aqi',
+                        'risk_key': 'pollution_risk',
+                        'unit': 'AQI',
+                        'source': 'Air Quality Data',
+                        'icon': '🏭'
                     },
                     'Seismic Activity': {
                         'value_key': 'seismic_zone',
@@ -1192,6 +1262,13 @@ if st.session_state.analysis_complete and st.session_state.analysis_results:
                 'unit': 'ppm',
                 'source': 'Coastal Monitoring',
                 'icon': '🌊'
+            },
+            'Pollution (AQI)': {
+                'value_key': 'pollution_aqi',
+                'risk_key': 'pollution_risk',
+                'unit': 'AQI',
+                'source': 'Air Quality Data',
+                'icon': '🏭'
             },
             'Seismic Activity': {
                 'value_key': 'seismic_zone',
