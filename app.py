@@ -6,14 +6,14 @@ import numpy as np
 import math
 from datetime import datetime
 import io
+import matplotlib.pyplot as plt
+import base64
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, Image as RLImage, PageBreak
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
-import matplotlib.pyplot as plt
-import base64
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Image as RLImage
 
 # Page config
 st.set_page_config(page_title="Deccan Environmental Analysis", layout="wide", page_icon="🌍")
