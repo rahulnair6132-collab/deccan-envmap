@@ -8,12 +8,19 @@ from datetime import datetime
 import io
 import matplotlib.pyplot as plt
 import base64
-from reportlab.lib.pagesizes import A4
-from reportlab.lib import colors
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import inch
-from reportlab.lib.enums import TA_CENTER, TA_LEFT
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Image as RLImage
+
+# ReportLab imports
+try:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak, Image as RLImage
+    REPORTLAB_AVAILABLE = True
+except ImportError:
+    REPORTLAB_AVAILABLE = False
+    st.warning("ReportLab not available. PDF generation will be disabled.")
 
 # Page config
 st.set_page_config(page_title="Deccan Environmental Analysis", layout="wide", page_icon="🌍")
@@ -805,6 +812,10 @@ def create_parameter_maps(analysis_results, line_name, line_color):
 
 def generate_pdf_report(transmission_lines):
     """Generate comprehensive PDF report"""
+    if not REPORTLAB_AVAILABLE:
+        st.error("ReportLab is not available. Cannot generate PDF report.")
+        return None
+    
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=0.5*inch, bottomMargin=0.5*inch)
     story = []
@@ -1182,19 +1193,23 @@ if st.session_state.transmission_lines:
     st.markdown("---")
     st.markdown("### 📄 Generate Report")
     
-    if st.button("Generate PDF Report", type="primary"):
-        with st.spinner("Generating comprehensive PDF report..."):
-            pdf_buffer = generate_pdf_report(st.session_state.transmission_lines)
-            
-            st.download_button(
-                label="⬇️ Download PDF Report",
-                data=pdf_buffer,
-                file_name=f"Transmission_Line_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
-                mime="application/pdf",
-                type="primary"
-            )
-            
-            st.success("✅ Report generated successfully!")
+    if not REPORTLAB_AVAILABLE:
+        st.warning("⚠️ PDF generation is not available. Please install reportlab package.")
+    else:
+        if st.button("Generate PDF Report", type="primary"):
+            with st.spinner("Generating comprehensive PDF report..."):
+                pdf_buffer = generate_pdf_report(st.session_state.transmission_lines)
+                
+                if pdf_buffer:
+                    st.download_button(
+                        label="⬇️ Download PDF Report",
+                        data=pdf_buffer,
+                        file_name=f"Transmission_Line_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+                        mime="application/pdf",
+                        type="primary"
+                    )
+                    
+                    st.success("✅ Report generated successfully!")
 
 # Footer
 st.markdown("---")
